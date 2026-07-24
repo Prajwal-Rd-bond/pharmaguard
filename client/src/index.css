@@ -1,0 +1,73 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+  body {
+    @apply bg-ink-50 text-ink-800;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold
+      transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-glow
+      focus-visible:ring-brand-500 active:bg-brand-800;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink-700 border border-ink-200 shadow-soft hover:bg-ink-50
+      hover:border-ink-300 focus-visible:ring-ink-400;
+  }
+  .btn-danger {
+    @apply btn bg-white text-rose-600 border border-rose-200 hover:bg-rose-50
+      focus-visible:ring-rose-400;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-600 hover:bg-ink-100 focus-visible:ring-ink-300;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800
+      placeholder:text-ink-400 shadow-sm transition
+      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100;
+  }
+  .field-label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500;
+  }
+
+  .card {
+    @apply rounded-2xl border border-ink-100 bg-white shadow-card;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset;
+  }
+
+  .table-shell {
+    @apply overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card;
+  }
+  .table-shell table {
+    @apply w-full border-collapse text-sm;
+  }
+  .table-shell thead {
+    @apply bg-ink-50/80;
+  }
+  .table-shell th {
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-500;
+  }
+  .table-shell td {
+    @apply px-4 py-3 text-ink-700;
+  }
+  .table-shell tbody tr {
+    @apply border-t border-ink-100 transition-colors hover:bg-brand-50/40;
+  }
+}
