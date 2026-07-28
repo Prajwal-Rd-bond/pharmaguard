@@ -6,8 +6,8 @@ sentence-transformers==3.1.1
 qdrant-client==1.11.3
 scikit-learn==1.5.2
 numpy==1.26.4
+transformers==4.45.1
+requests==2.32.3
 # Optional / Phase 2:
 # openai==1.51.0
 # xgboost==2.1.1
-# torch==2.4.1
-# transformers==4.45.1

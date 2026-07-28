@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,8 +7,11 @@ from .schemas import PipelineRequest, PipelineResponse
 from .pipeline.deidentify import deidentify
 from .pipeline.extract import extract
 from .pipeline.classify import classify
-from .pipeline.retrieve import retrieve
+from .pipeline.retrieve import retrieve, _get_qdrant_client, _get_embedder
+from .pipeline.corpus_seed import ensure_seeded
 from .pipeline.summarize import summarize
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PharmaGuard ML Service", version="0.1.0")
 
@@ -16,6 +21,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def seed_rag_corpus():
+    # Fail open: if Qdrant/embedder aren't ready yet, retrieve() falls back to the baseline
+    # retriever per-request until they are, rather than blocking ml-service from starting.
+    try:
+        ensure_seeded(_get_qdrant_client(), _get_embedder())
+    except Exception as exc:
+        logger.warning("RAG corpus seeding skipped at startup (%s)", exc)
 
 
 @app.get("/health")

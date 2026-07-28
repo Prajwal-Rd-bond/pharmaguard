@@ -17,17 +17,43 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pharmaguard-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # One-shot init container: pulls the extraction model into the ollama_data volume, then exits.
+  # Re-running `docker compose up` is a no-op here once the model is already pulled.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: pharmaguard-ollama-pull
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull llama3.2:3b"]
+    restart: "no"
+
   ml-service:
     build: ./ml-service
     container_name: pharmaguard-ml-service
     restart: unless-stopped
     environment:
       - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2:3b
       - PORT=8000
+    volumes:
+      - hf_cache:/root/.cache/huggingface
     ports:
       - "8000:8000"
     depends_on:
       - qdrant
+      - ollama
 
   server:
     build: ./server
@@ -58,3 +84,5 @@ services:
 volumes:
   mongo_data:
   qdrant_data:
+  ollama_data:
+  hf_cache:

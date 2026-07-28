@@ -64,6 +64,8 @@ export async function runReportPipeline(req, res) {
     confidence: result.classification.confidence,
     modelName: result.classification.model_name,
     modelVersion: result.classification.model_version,
+    promptVersion: result.classification.prompt_version,
+    rationale: result.classification.rationale,
     priorityReview: ["serious", "life_threatening"].includes(result.classification.severity),
   });
 
@@ -76,6 +78,7 @@ export async function runReportPipeline(req, res) {
       title: r.title,
       snippet: r.snippet,
       similarityScore: r.similarity_score,
+      retrievalMode: r.retrieval_mode,
     }))
   );
 

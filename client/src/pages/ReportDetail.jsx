@@ -53,7 +53,8 @@ export default function ReportDetail() {
   const severityStyles = {
     mild: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     moderate: "bg-amber-50 text-amber-700 ring-amber-200",
-    severe: "bg-rose-50 text-rose-700 ring-rose-200",
+    serious: "bg-rose-50 text-rose-700 ring-rose-200",
+    life_threatening: "bg-rose-600 text-white ring-rose-700",
   };
 
   return (
@@ -93,6 +94,9 @@ export default function ReportDetail() {
                 {classification.modelName} v{classification.modelVersion}
               </span>
             </div>
+            {classification.rationale && (
+              <p className="mt-3 text-sm text-ink-600">{classification.rationale}</p>
+            )}
           </section>
         )}
 
@@ -124,6 +128,7 @@ export default function ReportDetail() {
                     <span className="badge bg-brand-50 text-brand-700 ring-brand-200">{r.sourceCollection}</span>
                     <strong className="text-sm text-ink-900">{r.title}</strong>
                     <span className="text-xs text-ink-400">similarity {r.similarityScore}</span>
+                    <span className="text-xs text-ink-400">· {r.retrievalMode}</span>
                   </div>
                   <p className="mt-1.5 text-sm text-ink-600">{r.snippet}</p>
                 </li>

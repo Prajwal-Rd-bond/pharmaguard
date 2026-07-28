@@ -36,6 +36,8 @@ class ClassificationResult(BaseModel):
     confidence: float
     model_name: str
     model_version: str
+    prompt_version: str = "n/a"
+    rationale: Optional[str] = None
 
 
 class RetrievalItem(BaseModel):
@@ -44,6 +46,7 @@ class RetrievalItem(BaseModel):
     title: str
     snippet: str
     similarity_score: float
+    retrieval_mode: str = "fallback_baseline"
 
 
 class PipelineResponse(BaseModel):

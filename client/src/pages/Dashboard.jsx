@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import api from "../api/client";
 import PageHeader from "../components/PageHeader";
 import { StatusBadge } from "../components/Badge";
+import { useAuth } from "../context/AuthContext";
+
+// GET /reports is RBAC-gated to pharmacist/researcher/admin (see server/src/routes/reportRoutes.js);
+// doctors don't have a report-list view yet, so skip the fetch rather than 403 on every load.
+const CAN_LIST_REPORTS = ["pharmacist", "researcher", "admin"];
 
 const STATUS_ORDER = ["submitted", "pending_review", "approved", "rejected", "request_more_info"];
 
@@ -15,15 +20,19 @@ const STAT_ACCENTS = {
 
 // Module 10 (Phase 2 will replace this with real aggregation charts). Placeholder counts for MVP demo.
 export default function Dashboard() {
+  const { user } = useAuth();
+  const canListReports = CAN_LIST_REPORTS.includes(user?.role);
   const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canListReports);
 
   useEffect(() => {
-    api.get("/reports").then((res) => {
-      setReports(res.data.reports);
-      setLoading(false);
-    });
-  }, []);
+    if (!canListReports) return;
+    api
+      .get("/reports")
+      .then((res) => setReports(res.data.reports))
+      .catch(() => setReports([]))
+      .finally(() => setLoading(false));
+  }, [canListReports]);
 
   const counts = reports.reduce((acc, r) => {
     acc[r.status] = (acc[r.status] || 0) + 1;
@@ -31,6 +40,18 @@ export default function Dashboard() {
   }, {});
 
   const statuses = [...new Set([...STATUS_ORDER, ...Object.keys(counts)])].filter((s) => counts[s] !== undefined || STATUS_ORDER.includes(s));
+
+  if (!canListReports) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Submit an ADR report to get started." />
+        <div className="card p-6 text-sm text-ink-500">
+          Report-level stats are visible to pharmacists, researchers, and admins. Use{" "}
+          <span className="font-medium text-ink-700">Submit Report</span> in the sidebar to file a new ADR report.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

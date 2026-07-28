@@ -10,6 +10,7 @@ const retrievalSchema = new mongoose.Schema(
     title: String,
     snippet: String,
     similarityScore: Number,
+    retrievalMode: String, // "qdrant" | "fallback_baseline"
   },
   { timestamps: true }
 );
