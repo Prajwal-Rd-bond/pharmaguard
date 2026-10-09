@@ -45,20 +45,17 @@ persist model version + prompt version used."
 
 ## Next steps (not yet done)
 
-1. **Fix the anaphylaxis under-triage gap** — likely fix: either keep named diagnoses in
-   extraction's `symptoms` output (loosen the prompt's "symptoms only" instruction), or pass the
-   de-identified raw text into the classification prompt alongside the structured extraction, so
-   diagnosis terms aren't lost between stages.
-2. **RAG corpus is still the Phase 1 "reduced corpus"** (3 collections, 4 seed docs total, ported
-   from the old mock data) — Phase 2 per the planning doc calls for the full PubMed/WHO/FDA feeds.
-3. **`docker-compose.yml` healthchecks** — `server` and `ml-service` use plain `depends_on` (waits
+1. ~~**Fix the anaphylaxis under-triage gap**~~ — *Done: passed de-identified raw text into the classification prompt alongside the structured extraction so diagnosis terms aren't lost.*
+2. ~~**RAG corpus is still the Phase 1 "reduced corpus"** (3 collections, 4 seed docs total, ported
+   from the old mock data) — Phase 2 per the planning doc calls for the full PubMed/WHO/FDA feeds.~~ — *Done: expanded corpus with live PubMed and OpenFDA API integrations, plus extended mock fallbacks.*
+3. ~~**`docker-compose.yml` healthchecks** — `server` and `ml-service` use plain `depends_on` (waits
    for container start, not HTTP readiness). Works fine today because every real-model call has a
    fallback, but a `condition: service_healthy` healthcheck on `qdrant`/`ollama` would tighten
-   startup ordering for Phase 2.
-4. **Decide on `summarize.py`** — leave it template-based (current, deliberate choice) or move to
-   the docstring's optional constrained-LLM-citation approach. No decision made yet either way.
-5. **UI**: `retrieval_mode` and classification `rationale` are now surfaced in
-   `ReportDetail.jsx`; not yet reflected anywhere else (Dashboard, Review Queue) if that's wanted.
+   startup ordering for Phase 2.~~ — *Done: added healthchecks to DBs, models, and ML service.*
+4. ~~**Decide on `summarize.py`** — leave it template-based (current, deliberate choice) or move to
+   the docstring's optional constrained-LLM-citation approach. No decision made yet either way.~~ — *Done: Switched to constrained LLM generation with a template fallback.*
+5. ~~**UI**: `retrieval_mode` and classification `rationale` are now surfaced in
+   `ReportDetail.jsx`; not yet reflected anywhere else (Dashboard, Review Queue) if that's wanted.~~ — *Done: added AI Assessment column to Review Queue and Recent Priority Assessments to Dashboard. Also completed the animated Intro/Splash Screen on first load.*
 
 ## Local test infra used this session (not part of the repo)
 

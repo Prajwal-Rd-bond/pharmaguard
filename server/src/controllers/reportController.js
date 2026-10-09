@@ -113,8 +113,35 @@ export async function getReport(req, res) {
 export async function listReports(req, res) {
   const { status } = req.query;
   const filter = status ? { status } : {};
-  const reports = await Report.find(filter).sort({ createdAt: -1 }).limit(200);
-  res.json({ reports });
+  const reports = await Report.find(filter).sort({ createdAt: -1 }).limit(200).lean();
+
+  const reportIds = reports.map(r => r._id);
+  
+  const [classifications, retrievals] = await Promise.all([
+    Classification.find({ report: { $in: reportIds } }).lean(),
+    Retrieval.find({ report: { $in: reportIds } }).lean()
+  ]);
+
+  const classMap = {};
+  for (const c of classifications) {
+    if (!classMap[c.report] || c.createdAt > classMap[c.report].createdAt) {
+      classMap[c.report] = c;
+    }
+  }
+
+  const retMap = {};
+  for (const r of retrievals) {
+    if (!retMap[r.report]) retMap[r.report] = [];
+    retMap[r.report].push(r);
+  }
+
+  const enrichedReports = reports.map(r => ({
+    ...r,
+    classification: classMap[r._id] || null,
+    retrievals: retMap[r._id] || []
+  }));
+
+  res.json({ reports: enrichedReports });
 }
 
 // Module 9 — human approval workflow. Every action is logged; edits are diffed against AI output.

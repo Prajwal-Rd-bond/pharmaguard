@@ -47,7 +47,7 @@ def run_pipeline(req: PipelineRequest):
     """
     deidentified_text, deid_log = deidentify(req.raw_text)
     extraction = extract(deidentified_text)
-    classification = classify(extraction)
+    classification = classify(extraction, deidentified_text)
     retrievals = retrieve(extraction)
     summary = summarize(extraction, classification, retrievals)
 

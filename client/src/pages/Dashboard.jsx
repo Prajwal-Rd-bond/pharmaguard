@@ -84,6 +84,40 @@ export default function Dashboard() {
         </svg>
         Full analytics (trends, top drugs, geographic/age distribution) — coming in Phase 2.
       </div>
+
+      {!loading && reports.some(r => r.classification) && (
+        <div className="mt-8">
+          <h2 className="mb-4 text-lg font-semibold text-ink-900">Recent Priority AI Assessments</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {reports
+              .filter(r => r.classification && ["serious", "life_threatening"].includes(r.classification.severity))
+              .slice(0, 4)
+              .map(r => (
+                <div key={r._id} className="card p-5">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className={`badge text-xs ${r.classification.severity === 'life_threatening' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+                        {r.classification.severity.toUpperCase()}
+                      </span>
+                      <p className="mt-2 text-sm font-medium text-ink-900">{r.classification.rationale || "No rationale provided."}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-ink-500">
+                        {r.retrievals?.length > 0 && (
+                          <span className="flex items-center gap-1">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+                            </svg>
+                            {r.retrievals[0].retrievalMode} ({r.retrievals.length} sources)
+                          </span>
+                        )}
+                        <span>Report {r._id.slice(-6)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

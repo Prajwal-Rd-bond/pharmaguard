@@ -23,7 +23,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
 CLASSIFICATION_PROMPT = """You are a pharmacovigilance risk classification assistant.
-Classify the overall severity of the adverse drug reaction described by the structured data below.
+Classify the overall severity of the adverse drug reaction described by the structured data and the original report text below.
 
 Severity must be exactly one of: mild, moderate, serious, life_threatening.
 
@@ -46,6 +46,11 @@ Return ONLY a JSON object with exactly these fields:
 Structured ADR data:
 \"\"\"
 {extraction_json}
+\"\"\"
+
+Original Report Text:
+\"\"\"
+{raw_text}
 \"\"\"
 
 JSON:"""
@@ -85,12 +90,15 @@ def _classify_baseline(extraction: dict) -> dict:
     }
 
 
-def _call_ollama(extraction: dict) -> dict:
+def _call_ollama(extraction: dict, raw_text: str) -> dict:
     response = requests.post(
         f"{OLLAMA_URL}/api/generate",
         json={
             "model": OLLAMA_MODEL,
-            "prompt": CLASSIFICATION_PROMPT.format(extraction_json=json.dumps(extraction)),
+            "prompt": CLASSIFICATION_PROMPT.format(
+                extraction_json=json.dumps(extraction),
+                raw_text=raw_text
+            ),
             "format": "json",
             "stream": False,
             "options": {"temperature": 0},
@@ -105,9 +113,9 @@ def _call_ollama(extraction: dict) -> dict:
         return json.loads(raw.strip().strip("`"))
 
 
-def classify(extraction: dict) -> dict:
+def classify(extraction: dict, raw_text: str = "") -> dict:
     try:
-        payload = _call_ollama(extraction)
+        payload = _call_ollama(extraction, raw_text)
         payload["severity"] = str(payload["severity"]).strip().lower()
         validated = _ClassificationLLM.model_validate(payload)
 

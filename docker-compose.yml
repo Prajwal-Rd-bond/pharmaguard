@@ -7,6 +7,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -16,6 +21,11 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   ollama:
     image: ollama/ollama:latest
@@ -25,6 +35,11 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # One-shot init container: pulls the extraction model into the ollama_data volume, then exits.
   # Re-running `docker compose up` is a no-op here once the model is already pulled.
@@ -32,10 +47,11 @@ services:
     image: ollama/ollama:latest
     container_name: pharmaguard-ollama-pull
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     environment:
       - OLLAMA_HOST=ollama:11434
-    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull llama3.2:3b"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull llama3.2:3b"]
     restart: "no"
 
   ml-service:
@@ -52,8 +68,15 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - qdrant
-      - ollama
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   server:
     build: ./server
@@ -67,8 +90,10 @@ services:
     ports:
       - "5001:5000"
     depends_on:
-      - mongo
-      - ml-service
+      mongo:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
 
   client:
     build: ./client
@@ -78,6 +103,9 @@ services:
       - VITE_API_URL=http://localhost:5001/api
     ports:
       - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
     depends_on:
       - server
 

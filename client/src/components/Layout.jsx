@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { RoleBadge } from "./Badge";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: DashboardIcon, roles: null },
+  { to: "/dashboard", label: "Dashboard", icon: DashboardIcon, roles: null },
   { to: "/intake", label: "Submit Report", icon: PlusIcon, roles: ["doctor", "admin"] },
   { to: "/queue", label: "Review Queue", icon: QueueIcon, roles: ["pharmacist", "admin", "researcher"] },
   { to: "/audit-logs", label: "Audit Log", icon: LogIcon, roles: ["admin", "pharmacist"] },
@@ -32,7 +32,7 @@ export default function Layout() {
 
         <nav className="flex-1 space-y-1 px-3 py-2">
           {visibleItems.map((item) => {
-            const active = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
+            const active = location.pathname.startsWith(item.to);
             const Icon = item.icon;
             return (
               <Link
