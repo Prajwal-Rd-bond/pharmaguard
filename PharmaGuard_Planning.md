@@ -297,4 +297,28 @@ Phase 2A Implementation Tasks:
 | **Phase 2B** | Real PV Regulatory Depth (ICH E2A criteria, Naranjo/WHO-UMC causality, E2B(R3) XML, 7/15-day clocks, duplicate detection) | **COMPLETED** | 12 backend unit tests passing; 12 ML service unit tests passing; E2B export endpoint live; Review queue SLA timers live. |
 | **Phase 2E** | Production Readiness (Field encryption, TOTP MFA, Document parser, Tracing, GPU profiles) | **COMPLETED** | 21 backend unit tests passing; AES-256-GCM PHI encryption verified; TOTP RFC 6238 verified; compose.gpu.yml ready. |
 
+---
+
+## 10. Roadmap & Ideas for Tomorrow's Session
+
+The foundational Phase 2 architecture, regulatory algorithms, intelligence modules, and enterprise security layers are now fully implemented and pushed to GitHub. The following prioritized initiatives are queued for tomorrow:
+
+1. **Hospital EHR & FHIR R4 Interoperability Connector**:
+   - Implement an ingestion adapter for HL7 FHIR `AdverseEvent` and `MedicationAdministration` resources.
+   - Support SMART-on-FHIR launch so clinicians can trigger PharmaGuard directly from Epic / Cerner EHR environments.
+
+2. **Enterprise Hospital SSO / Identity Federation (SAML 2.0 & OIDC)**:
+   - Wire OAuth2 / OpenID Connect (OIDC) provider support for Microsoft Entra ID (Azure AD) and Okta alongside the existing JWT/TOTP MFA engine.
+
+3. **Active Learning & LoRA Fine-Tuning Loop**:
+   - Create an automated export script that turns high-confidence `FeedbackExample` corrections into token-level HuggingFace dataset format.
+   - Script a quantized LoRA (QLoRA) fine-tuning pipeline on Llama-3-8B / Mistral-7B using the GPU compose profile.
+
+4. **Direct Regulatory Gateway Transmission (FDA ESG & EMA E2B)**:
+   - Package E2B(R3) XML with AS2 protocol envelope signing for direct test transmission to FDA Electronic Submission Gateway (ESG) test endpoints.
+
+5. **Real-Time Pharmacist SLA Alert WebSockets**:
+   - Replace polling with Socket.io / WebSocket broadcast when new high-severity reports arrive or when 7-day regulatory clocks fall below 24 hours remaining.
+
+
 
