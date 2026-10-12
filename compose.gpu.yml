@@ -1,0 +1,19 @@
+# Docker Compose GPU Acceleration Profile for PharmaGuard
+# Run with: docker compose -f docker-compose.yml -f compose.gpu.yml up -d
+services:
+  ml-service:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - USE_GPU=true
+      - CUDA_VISIBLE_DEVICES=0
+      - TORCH_DEVICE=cuda
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+

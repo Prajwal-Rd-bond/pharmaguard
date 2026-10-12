@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ROLES, required: true },
     active: { type: Boolean, default: true },
+    mfaEnabled: { type: Boolean, default: false },
+    mfaSecret: { type: String },
   },
   { timestamps: true }
 );
@@ -23,7 +25,14 @@ userSchema.methods.checkPassword = function (plain) {
 };
 
 userSchema.methods.toSafeJSON = function () {
-  return { id: this._id, name: this.name, email: this.email, role: this.role, active: this.active };
+  return {
+    id: this._id,
+    name: this.name,
+    email: this.email,
+    role: this.role,
+    active: this.active,
+    mfaEnabled: Boolean(this.mfaEnabled),
+  };
 };
 
 export default mongoose.model("User", userSchema);

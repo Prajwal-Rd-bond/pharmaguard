@@ -1,6 +1,6 @@
-import mongoose from "mongoose";
+import crypto from "crypto";
 
-// Module 12 — append-only audit trail.
+// Module 12 — Cryptographically hash-chained, tamper-evident, append-only audit trail.
 const auditLogSchema = new mongoose.Schema(
   {
     actor: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // null for system/AI-originated entries
@@ -10,9 +10,40 @@ const auditLogSchema = new mongoose.Schema(
     pipelineRunId: String,
     modelVersion: String,
     details: { type: mongoose.Schema.Types.Mixed },
+    prevHash: { type: String, default: "GENESIS" },
+    hash: { type: String },
   },
   { timestamps: true, capped: false }
 );
 
-// Append-only by convention: no update/delete routes are exposed for this collection (see routes/auditRoutes.js).
+// Compute hash before saving new audit entries
+auditLogSchema.pre("save", async function (next) {
+  if (this.isNew) {
+    if (!this.prevHash || this.prevHash === "GENESIS") {
+      const lastEntry = await this.constructor.findOne().sort({ createdAt: -1 });
+      this.prevHash = lastEntry?.hash || "GENESIS";
+    }
+
+    const payload = [
+      this.prevHash,
+      this.actor?.toString() || "",
+      this.actorType,
+      this.action,
+      this.report?.toString() || "",
+      this.pipelineRunId || "",
+      JSON.stringify(this.details || {}),
+    ].join("|");
+
+    this.hash = crypto.createHash("sha256").update(payload).digest("hex");
+  }
+  next();
+});
+
+// Enforce append-only at the database/ODM level: block any updates or deletes
+const rejectModification = function () {
+  throw new Error("AuditLog is strictly immutable and append-only. Modifying or deleting audit records is forbidden.");
+};
+
+auditLogSchema.pre(["updateOne", "updateMany", "findOneAndUpdate", "deleteOne", "deleteMany", "findOneAndDelete"], rejectModification);
+
 export default mongoose.model("AuditLog", auditLogSchema);

@@ -1,133 +1,167 @@
 """
-Module 5 — ML ADR Risk Classification.
+Module 5 — ML ADR Risk Classification & ICH E2A Regulatory Seriousness Assessment.
 
-Calls the same local Ollama model extract.py uses, prompted to reason about severity from the
-full structured extraction (drug, dosage, timeline, comorbidities, concomitant drugs — not just
-the symptom list). If Ollama is unreachable, times out, or returns something that doesn't
-validate against the fixed severity enum, we fall back to the rule-based keyword-set baseline
-rather than failing the whole pipeline run — same resilience pattern as extract.py/retrieve.py.
+Provides:
+1. 4-level triage severity (mild, moderate, serious, life_threatening)
+2. Official ICH E2A Seriousness Criteria identification:
+   - Death
+   - Life-Threatening
+   - Hospitalization (Initial or Prolonged)
+   - Persistent/Significant Disability or Incapacity
+   - Congenital Anomaly / Birth Defect
+   - Medically Significant Event
+3. Expedited regulatory reporting clock assignment (7-day, 15-day, 90-day SLA)
 """
 
-import json
-import logging
-import os
-from typing import Literal
+try:
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.pipeline import Pipeline
+    HAS_ML_DEPS = True
+except ImportError:
+    HAS_ML_DEPS = False
+    np = None
+    Pipeline = None
 
-import requests
-from pydantic import BaseModel, ValidationError
+LIFE_THREATENING_TERMS = {"anaphylaxis", "seizure", "liver failure", "chest pain", "bleeding", "respiratory arrest", "shock"}
+SERIOUS_TERMS = {"shortness of breath", "swelling", "hives", "angioedema", "acute kidney injury", "tendon rupture", "rhabdomyolysis"}
+MODERATE_TERMS = {"vomiting", "dizziness", "fever", "diarrhea", "rash", "myalgia"}
 
-logger = logging.getLogger(__name__)
+# Simulated training data for local classifier
+TRAIN_DATA = [
+    ("anaphylaxis severe reaction", "life_threatening"),
+    ("chest pain and internal bleeding", "life_threatening"),
+    ("immediate seizure and liver failure", "life_threatening"),
+    ("anaphylactic shock symptoms", "life_threatening"),
+    ("shortness of breath and hives noticed", "serious"),
+    ("swelling of the face and lips", "serious"),
+    ("severe swelling and hives", "serious"),
+    ("patient had shortness of breath", "serious"),
+    ("acute kidney injury and angioedema", "serious"),
+    ("tendon rupture in left foot", "serious"),
+    ("vomiting and dizziness", "moderate"),
+    ("mild fever and diarrhea", "moderate"),
+    ("patient was dizzy and had diarrhea", "moderate"),
+    ("reported vomiting after intake", "moderate"),
+    ("mild headache", "mild"),
+    ("slight nausea", "mild"),
+    ("felt a bit tired", "mild"),
+    ("itching on the arm", "mild"),
+    ("no major symptoms, just tired", "mild")
+]
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
-OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+clf_pipeline = None
+if HAS_ML_DEPS and Pipeline:
+    try:
+        texts = [x[0] for x in TRAIN_DATA]
+        labels = [x[1] for x in TRAIN_DATA]
 
-CLASSIFICATION_PROMPT = """You are a pharmacovigilance risk classification assistant.
-Classify the overall severity of the adverse drug reaction described by the structured data and the original report text below.
-
-Severity must be exactly one of: mild, moderate, serious, life_threatening.
-
-- life_threatening: immediately dangerous to life (e.g. anaphylaxis, respiratory/cardiac arrest,
-  seizure, severe internal bleeding, organ failure).
-- serious: requires urgent medical intervention or hospitalization but is not immediately
-  life-threatening (e.g. severe allergic reaction with breathing difficulty, significant bleeding,
-  high fever with systemic symptoms).
-- moderate: causes significant discomfort or requires medical attention but is not urgent
-  (e.g. persistent vomiting, dizziness, moderate fever).
-- mild: minor and self-limiting (e.g. mild rash, mild nausea, itching without systemic involvement).
-
-Return ONLY a JSON object with exactly these fields:
-{{
-  "severity": one of "mild", "moderate", "serious", "life_threatening",
-  "confidence": float between 0 and 1,
-  "rationale": one sentence explaining the key factors driving this classification
-}}
-
-Structured ADR data:
-\"\"\"
-{extraction_json}
-\"\"\"
-
-Original Report Text:
-\"\"\"
-{raw_text}
-\"\"\"
-
-JSON:"""
-
-# Baseline keyword sets — used only as a fallback if the LLM call fails or returns invalid output.
-LIFE_THREATENING_TERMS = {"anaphylaxis", "seizure", "liver failure", "chest pain", "bleeding"}
-SERIOUS_TERMS = {"shortness of breath", "swelling", "hives"}
-MODERATE_TERMS = {"vomiting", "dizziness", "fever", "diarrhea"}
-
-
-class _ClassificationLLM(BaseModel):
-    severity: Literal["mild", "moderate", "serious", "life_threatening"]
-    confidence: float
-    rationale: str
+        clf_pipeline = Pipeline([
+            ('tfidf', TfidfVectorizer(max_features=100)),
+            ('clf', RandomForestClassifier(n_estimators=50, random_state=42))
+        ])
+        clf_pipeline.fit(texts, labels)
+    except Exception as e:
+        print(f"Warning: Failed to train local classifier: {e}")
+        clf_pipeline = None
 
 
-def _classify_baseline(extraction: dict) -> dict:
-    symptoms = set(extraction.get("symptoms") or [])
+def evaluate_ich_e2a_criteria(symptoms: list, raw_text: str = "") -> tuple:
+    """
+    Evaluates official ICH E2A Seriousness criteria and regulatory clock.
+    Returns: (criteria_list, is_serious, regulatory_clock_days)
+    """
+    text_corpus = (" ".join(symptoms) + " " + (raw_text or "")).lower()
+    criteria = []
 
-    if symptoms & LIFE_THREATENING_TERMS:
-        severity, confidence = "life_threatening", 0.9
-    elif symptoms & SERIOUS_TERMS:
-        severity, confidence = "serious", 0.8
-    elif symptoms & MODERATE_TERMS:
-        severity, confidence = "moderate", 0.7
-    elif symptoms:
-        severity, confidence = "mild", 0.65
+    # 1. Death
+    if any(k in text_corpus for k in ["fatal", "death", "died", "deceased"]):
+        criteria.append("death")
+
+    # 2. Life-Threatening
+    if any(k in text_corpus for k in ["anaphylaxis", "anaphylactic", "cardiac arrest", "respiratory arrest", "shock", "intubated"]):
+        criteria.append("life_threatening")
+
+    # 3. Hospitalization (Initial or Prolonged)
+    if any(k in text_corpus for k in ["hospitalized", "hospital admission", "icu", "emergency room", "inpatient"]):
+        criteria.append("hospitalization")
+
+    # 4. Disability / Incapacity
+    if any(k in text_corpus for k in ["disability", "incapacity", "tendon rupture", "permanent", "neuropathy"]):
+        criteria.append("disability")
+
+    # 5. Congenital Anomaly
+    if any(k in text_corpus for k in ["congenital", "birth defect", "teratogenic", "malformation"]):
+        criteria.append("congenital_anomaly")
+
+    # 6. Medically Significant Event
+    if any(k in text_corpus for k in ["kidney injury", "renal failure", "lactic acidosis", "rhabdomyolysis", "stevens-johnson", "angioedema"]):
+        criteria.append("medically_significant")
+
+    is_serious = len(criteria) > 0
+
+    # Regulatory Reporting Clock (FDA 21 CFR 314.80 / EMA Guideline on GVP Module VI)
+    # 7-day clock for fatal or life-threatening unexpected ADRs
+    if "death" in criteria or "life_threatening" in criteria:
+        regulatory_clock_days = 7
+    elif is_serious:
+        regulatory_clock_days = 15  # 15-day expedited reporting for serious ADRs
     else:
-        severity, confidence = "mild", 0.4  # low confidence: little signal to go on
+        regulatory_clock_days = 90  # 90-day periodic non-serious reporting
+
+    return criteria, is_serious, regulatory_clock_days
+
+
+def classify(extraction: dict) -> dict:
+    symptoms = extraction.get("symptoms") or []
+    symptoms_text = " ".join(symptoms)
+    
+    severity = None
+    confidence = None
+    model_name = "rule_based_baseline"
+    model_version = "0.2.0"
+
+    if clf_pipeline and symptoms:
+        try:
+            probas = clf_pipeline.predict_proba([symptoms_text])[0]
+            max_idx = np.argmax(probas)
+            severity = clf_pipeline.classes_[max_idx]
+            confidence = round(float(probas[max_idx]), 2)
+            model_name = "rf_tfidf_classifier"
+        except Exception as e:
+            print(f"ML classification failed: {e}. Falling back to rules.")
+
+    if severity is None:
+        # Rule-based fallback
+        symptoms_set = set(s.lower() for s in symptoms)
+        if any(term in symptoms_set for term in LIFE_THREATENING_TERMS) or any(term in symptoms_text.lower() for term in LIFE_THREATENING_TERMS):
+            severity, confidence = "life_threatening", 0.9
+        elif any(term in symptoms_set for term in SERIOUS_TERMS) or any(term in symptoms_text.lower() for term in SERIOUS_TERMS):
+            severity, confidence = "serious", 0.8
+        elif any(term in symptoms_set for term in MODERATE_TERMS) or any(term in symptoms_text.lower() for term in MODERATE_TERMS):
+            severity, confidence = "moderate", 0.7
+        elif symptoms_set:
+            severity, confidence = "mild", 0.65
+        else:
+            severity, confidence = "mild", 0.4
+
+    ich_criteria, is_serious, clock_days = evaluate_ich_e2a_criteria(symptoms)
+    if severity in ("serious", "life_threatening") and not is_serious:
+        is_serious = True
+        if severity == "life_threatening":
+            ich_criteria.append("life_threatening")
+            clock_days = 7
+        else:
+            ich_criteria.append("medically_significant")
+            clock_days = 15
 
     return {
         "severity": severity,
         "confidence": confidence,
-        "model_name": "rule_based_baseline",
-        "model_version": "0.1",
-        "prompt_version": "n/a",
+        "model_name": model_name,
+        "model_version": model_version,
+        "ich_e2a_criteria": ich_criteria,
+        "is_serious": is_serious,
+        "regulatory_clock_days": clock_days,
     }
-
-
-def _call_ollama(extraction: dict, raw_text: str) -> dict:
-    response = requests.post(
-        f"{OLLAMA_URL}/api/generate",
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": CLASSIFICATION_PROMPT.format(
-                extraction_json=json.dumps(extraction),
-                raw_text=raw_text
-            ),
-            "format": "json",
-            "stream": False,
-            "options": {"temperature": 0},
-        },
-        timeout=OLLAMA_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    raw = response.json()["response"]
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return json.loads(raw.strip().strip("`"))
-
-
-def classify(extraction: dict, raw_text: str = "") -> dict:
-    try:
-        payload = _call_ollama(extraction, raw_text)
-        payload["severity"] = str(payload["severity"]).strip().lower()
-        validated = _ClassificationLLM.model_validate(payload)
-
-        return {
-            "severity": validated.severity,
-            "confidence": validated.confidence,
-            "model_name": f"ollama:{OLLAMA_MODEL}",
-            "model_version": "0.1",
-            "prompt_version": "v1-llm",
-            "rationale": validated.rationale,
-        }
-
-    except (requests.RequestException, json.JSONDecodeError, ValidationError, KeyError) as exc:
-        logger.warning("LLM classification failed (%s), falling back to baseline classifier", exc)
-        return _classify_baseline(extraction)

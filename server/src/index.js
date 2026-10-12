@@ -10,20 +10,33 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import signalRoutes from "./routes/signalRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { rateLimiter } from "./middleware/rateLimiter.js";
+import { tracingMiddleware } from "./middleware/tracing.js";
+import { getDetailedHealth, getOperationalMetrics } from "./controllers/healthController.js";
 
 const app = express();
 
+app.use(tracingMiddleware);
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
 app.use(morgan("dev"));
 app.use(express.json({ limit: "5mb" }));
 
-app.get("/api/health", (req, res) => res.json({ ok: true, service: "pharmaguard-server" }));
+// General API rate limit: 200 requests per 15 minutes
+app.use("/api", rateLimiter({ windowMs: 15 * 60 * 1000, max: 200 }));
 
-app.use("/api/auth", authRoutes);
+// Auth rate limit: 20 attempts per 15 minutes to mitigate brute-force
+const authLimiter = rateLimiter({ windowMs: 15 * 60 * 1000, max: 20, message: "Too many authentication attempts, please try again later." });
+
+app.get("/api/health", getDetailedHealth);
+app.get("/api/metrics", getOperationalMetrics);
+
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/signals", signalRoutes);
 app.use("/api/audit-logs", auditRoutes);
 
 app.use(errorHandler);

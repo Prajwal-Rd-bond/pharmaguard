@@ -7,8 +7,13 @@ const client = axios.create({
 
 // Calls the FastAPI ML service's full pipeline (Module 7 orchestration).
 // The FastAPI service performs: deidentify -> extract -> classify -> retrieve -> summarize.
-export async function runPipeline({ pipelineRunId, rawText }) {
-  const { data } = await client.post("/pipeline/run", { pipeline_run_id: pipelineRunId, raw_text: rawText });
+export async function runPipeline({ pipelineRunId, rawText, traceId }) {
+  const headers = traceId ? { "x-trace-id": traceId } : {};
+  const { data } = await client.post(
+    "/pipeline/run",
+    { pipeline_run_id: pipelineRunId, raw_text: rawText },
+    { headers }
+  );
   return data;
 }
 

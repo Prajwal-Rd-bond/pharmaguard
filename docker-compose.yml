@@ -7,11 +7,6 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -21,38 +16,15 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: pharmaguard-ollama
+  redis:
+    image: redis:7-alpine
+    container_name: pharmaguard-redis
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "6379:6379"
     volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # One-shot init container: pulls the extraction model into the ollama_data volume, then exits.
-  # Re-running `docker compose up` is a no-op here once the model is already pulled.
-  ollama-pull:
-    image: ollama/ollama:latest
-    container_name: pharmaguard-ollama-pull
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      - OLLAMA_HOST=ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull llama3.2:3b"]
-    restart: "no"
+      - redis_data:/data
 
   ml-service:
     build: ./ml-service
@@ -60,23 +32,12 @@ services:
     restart: unless-stopped
     environment:
       - QDRANT_URL=http://qdrant:6333
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3.2:3b
       - PORT=8000
-    volumes:
-      - hf_cache:/root/.cache/huggingface
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
-      qdrant:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - qdrant
 
   server:
     build: ./server
@@ -84,16 +45,16 @@ services:
     restart: unless-stopped
     environment:
       - MONGO_URI=mongodb://mongo:27017/pharmaguard
+      - REDIS_URL=redis://redis:6379
       - ML_SERVICE_URL=http://ml-service:8000
-      - JWT_SECRET=change-me-in-production
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - PORT=5000
     ports:
       - "5001:5000"
     depends_on:
-      mongo:
-        condition: service_healthy
-      ml-service:
-        condition: service_healthy
+      - mongo
+      - redis
+      - ml-service
 
   client:
     build: ./client
@@ -103,14 +64,10 @@ services:
       - VITE_API_URL=http://localhost:5001/api
     ports:
       - "5173:5173"
-    volumes:
-      - ./client:/app
-      - /app/node_modules
     depends_on:
       - server
 
 volumes:
   mongo_data:
   qdrant_data:
-  ollama_data:
-  hf_cache:
+  redis_data:

@@ -25,6 +25,8 @@ from functools import lru_cache
 EMAIL_RE = re.compile(r"[\w\.\-]+@[\w\-]+\.[\w\.\-]+")
 PHONE_RE = re.compile(r"(\+?\d[\d\-\s\(\)]{7,}\d)")
 MRN_RE = re.compile(r"\b(MRN|Hospital ID|Patient ID)[:\s#]*([A-Za-z0-9\-]+)\b", re.IGNORECASE)
+NAME_RE = re.compile(r"\b(?:Patient|Name|Pt)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", re.IGNORECASE)
+ADDRESS_RE = re.compile(r"\b\d+\s+[A-Za-z0-9\s,]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way)\b", re.IGNORECASE)
 
 NER_MODEL_NAME = os.getenv("DEID_NER_MODEL", "obi/deid_roberta_i2b2")
 AGE_REDACT_THRESHOLD = 90
@@ -94,6 +96,10 @@ def deidentify(text: str):
     text, l = _regex_redact(PHONE_RE, "phone", text)
     log += l
     text, l = _regex_redact(MRN_RE, "hospital_id", text, group=2)
+    log += l
+    text, l = _regex_redact(NAME_RE, "name", text, group=1)
+    log += l
+    text, l = _regex_redact(ADDRESS_RE, "location", text)
     log += l
 
     text, ner_log, error = _ner_redact(text)
