@@ -94,3 +94,4 @@ export function aggregateQueueSlaMetrics(reports) {
       activeReportsCount > 0 ? Math.round((totalHours / activeReportsCount) * 10) / 10 : 0,
   };
 }
+

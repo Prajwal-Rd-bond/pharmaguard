@@ -16,3 +16,4 @@ router.post("/Bundle", requireRole("doctor", "admin", "pharmacist"), ingestFhirA
 router.get("/AdverseEvent/:id", requireRole("doctor", "pharmacist", "researcher", "admin"), getFhirAdverseEventById);
 
 export default router;
+

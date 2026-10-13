@@ -168,3 +168,4 @@ export function transmitToRegulatoryGateway(xmlContent, reportId, options = {}) 
     mdn,
   };
 }
+

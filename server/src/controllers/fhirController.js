@@ -112,3 +112,4 @@ export async function getFhirAdverseEventById(req, res) {
   res.setHeader("Content-Type", "application/fhir+json");
   return res.json(fhirResource);
 }
+
