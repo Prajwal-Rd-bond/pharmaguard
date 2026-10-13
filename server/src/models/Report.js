@@ -6,7 +6,7 @@ import { encryptField, decryptField } from "../utils/cryptoField.js";
 const reportSchema = new mongoose.Schema(
   {
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    source: { type: String, enum: ["pdf", "docx", "pasted_text", "manual_form"], required: true },
+    source: { type: String, enum: ["pdf", "docx", "pasted_text", "manual_form", "fhir_r4"], required: true },
     originalFilename: { type: String },
     rawText: { type: String, required: true }, // as submitted, pre-deidentification
     deidentifiedText: { type: String }, // set once Module 3 runs
@@ -61,6 +61,28 @@ const reportSchema = new mongoose.Schema(
 
     // Citation Verification / Anti-Hallucination
     citationVerification: { type: mongoose.Schema.Types.Mixed },
+
+    // FHIR Interoperability Metadata
+    fhirMetadata: {
+      resourceId: { type: String },
+      subjectIdentifier: { type: String },
+      recordedDate: { type: Date },
+    },
+
+    // Regulatory Gateway Transmission Tracking
+    gatewayTransmission: {
+      status: {
+        type: String,
+        enum: ["untransmitted", "pending_ack", "acknowledged", "rejected"],
+        default: "untransmitted",
+      },
+      gateway: { type: String }, // e.g., "FDA_ESG", "EMA_EV"
+      transmissionId: { type: String },
+      transmittedAt: { type: Date },
+      mdnStatus: { type: String },
+      mdnMessage: { type: String },
+      as2MessageId: { type: String },
+    },
   },
   { timestamps: true }
 );

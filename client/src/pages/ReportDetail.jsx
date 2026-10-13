@@ -133,6 +133,28 @@ export default function ReportDetail() {
     window.open(`/api/reports/${id}/export/e2b`, "_blank");
   }
 
+  function downloadFhirJson() {
+    window.open(`/api/reports/${id}/export/fhir`, "_blank");
+  }
+
+  async function transmitGateway() {
+    if (!window.confirm("Transmit this ICH E2B(R3) case to FDA Electronic Submissions Gateway (ESG)?")) return;
+    setBusy(true);
+    try {
+      const res = await api.post(`/reports/${id}/transmit-gateway`, { gateway: "FDA_ESG" });
+      if (res.data?.ok) {
+        alert(`Transmission Accepted!\nTransmission ID: ${res.data.gatewayTransmission?.transmissionId}\nReceipt Status: ${res.data.receipt?.status}\nFDA Core ID: ${res.data.receipt?.fdaCoreId || "ACK-RECEIVED"}`);
+        await load();
+      } else {
+        alert("Transmission rejected by gateway:\n" + JSON.stringify(res.data?.receipt?.errors || res.data));
+      }
+    } catch (e) {
+      alert("Gateway transmission error: " + (e.response?.data?.error || e.message));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!data) {
     return (
       <div className="flex h-64 items-center justify-center text-ink-400">
@@ -166,10 +188,23 @@ export default function ReportDetail() {
         action={
           <div className="flex items-center gap-2">
             <button
+              onClick={downloadFhirJson}
+              className="rounded border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100 shadow-xs"
+            >
+              Export FHIR R4
+            </button>
+            <button
               onClick={downloadE2BXml}
               className="rounded border border-ink-300 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50 shadow-xs"
             >
-              Export ICH E2B(R3) XML
+              Export ICH E2B(R3)
+            </button>
+            <button
+              onClick={transmitGateway}
+              disabled={busy}
+              className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 shadow-xs"
+            >
+              Transmit FDA ESG
             </button>
             {report.status === "submitted" && (
               <button disabled={busy} onClick={runPipeline} className="btn-primary text-xs py-1.5">
@@ -219,13 +254,38 @@ export default function ReportDetail() {
                 {checkingDuplicates ? "Scanning..." : "Check Duplicates"}
               </button>
               <button
+                onClick={downloadFhirJson}
+                className="rounded border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800 hover:bg-teal-100 shadow-xs"
+              >
+                FHIR R4
+              </button>
+              <button
                 onClick={downloadE2BXml}
                 className="rounded bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 shadow-xs"
               >
                 Download E2B(R3)
               </button>
+              <button
+                onClick={transmitGateway}
+                disabled={busy}
+                className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 shadow-xs"
+              >
+                Transmit FDA
+              </button>
             </div>
           </div>
+
+          {report.gatewayTransmission?.status === "acknowledged" && (
+            <div className="mt-4 flex items-center justify-between rounded bg-emerald-50 border border-emerald-200 px-3.5 py-2 text-xs text-emerald-800">
+              <span className="font-semibold flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
+                FDA Electronic Submission Gateway Acknowledged: {report.gatewayTransmission.transmissionId}
+              </span>
+              <span className="text-[11px] text-emerald-600 font-mono">
+                {new Date(report.gatewayTransmission.transmittedAt).toLocaleString()}
+              </span>
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4 text-xs">
             <div className="rounded bg-ink-50 p-3">

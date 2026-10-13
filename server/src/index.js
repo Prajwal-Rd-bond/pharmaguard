@@ -11,6 +11,7 @@ import userRoutes from "./routes/userRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import signalRoutes from "./routes/signalRoutes.js";
+import fhirRoutes from "./routes/fhirRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { rateLimiter } from "./middleware/rateLimiter.js";
 import { tracingMiddleware } from "./middleware/tracing.js";
@@ -37,6 +38,7 @@ app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/signals", signalRoutes);
+app.use("/api/fhir", fhirRoutes);
 app.use("/api/audit-logs", auditRoutes);
 
 app.use(errorHandler);

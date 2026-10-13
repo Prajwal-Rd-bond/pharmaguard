@@ -8,7 +8,7 @@ export default function Intake() {
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [intakeMode, setIntakeMode] = useState("paste"); // "paste" | "upload"
+  const [intakeMode, setIntakeMode] = useState("paste"); // "paste" | "upload" | "fhir"
 
   function handleFileChange(e) {
     const selected = e.target.files?.[0];
@@ -27,12 +27,49 @@ export default function Intake() {
     }
   }
 
+  function loadSampleFhir() {
+    const sample = {
+      resourceType: "AdverseEvent",
+      id: `ae-hosp-${Math.floor(1000 + Math.random() * 9000)}`,
+      actuality: "actual",
+      subject: { reference: "Patient/MRN-449102", display: "Robert Miller (62M)" },
+      date: new Date().toISOString(),
+      event: {
+        coding: [{ system: "http://hl7.org/fhir/sid/meddra", code: "10002272", display: "Anaphylactic shock" }],
+        text: "Sudden onset dyspnea, hypotension, and facial edema 15 minutes post-dose.",
+      },
+      seriousness: {
+        coding: [{ code: "life-threatening", display: "Life-Threatening" }],
+      },
+      suspectEntity: [
+        {
+          instance: {
+            concept: { text: "Intravenous Amoxicillin/Clavulanate 1.2g" },
+            display: "Amoxicillin/Clavulanate",
+          },
+        },
+      ],
+    };
+    setRawText(JSON.stringify(sample, null, 2));
+    setIntakeMode("fhir");
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setBusy(true);
     setStatus(null);
     try {
-      if (file) {
+      if (intakeMode === "fhir") {
+        let fhirJson;
+        try {
+          fhirJson = JSON.parse(rawText);
+        } catch {
+          throw new Error("Invalid JSON format. Please provide valid HL7 FHIR R4 JSON.");
+        }
+        const res = await api.post("/fhir/AdverseEvent", fhirJson);
+        setStatus({ tone: "success", text: `FHIR AdverseEvent ingested successfully (Report ID: ${res.data.reportId || "OK"}).` });
+        setRawText("");
+      } else if (file) {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("source", file.name.endsWith(".pdf") ? "pdf" : file.name.endsWith(".docx") ? "docx" : "uploaded_file");
@@ -41,14 +78,16 @@ export default function Intake() {
         await api.post("/reports", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
+        setStatus({ tone: "success", text: "ADR Report submitted successfully for triage and pipeline execution." });
+        setRawText("");
+        setFile(null);
       } else {
         await api.post("/reports", { source: "pasted_text", rawText });
+        setStatus({ tone: "success", text: "ADR Report submitted successfully for triage and pipeline execution." });
+        setRawText("");
       }
-      setStatus({ tone: "success", text: "ADR Report submitted successfully for triage and pipeline execution." });
-      setRawText("");
-      setFile(null);
     } catch (err) {
-      setStatus({ tone: "error", text: err.response?.data?.error || "Submission failed." });
+      setStatus({ tone: "error", text: err.response?.data?.error || err.response?.data?.issue?.[0]?.diagnostics || err.message || "Submission failed." });
     } finally {
       setBusy(false);
     }
@@ -62,29 +101,51 @@ export default function Intake() {
       />
 
       <div className="card p-6">
-        <div className="flex gap-4 border-b border-ink-100 pb-4 mb-4 text-sm font-medium">
-          <button
-            type="button"
-            onClick={() => setIntakeMode("paste")}
-            className={`pb-2 border-b-2 transition-colors ${
-              intakeMode === "paste"
-                ? "border-brand-600 text-brand-600 font-semibold"
-                : "border-transparent text-ink-500 hover:text-ink-800"
-            }`}
-          >
-            Paste Clinical Text
-          </button>
-          <button
-            type="button"
-            onClick={() => setIntakeMode("upload")}
-            className={`pb-2 border-b-2 transition-colors ${
-              intakeMode === "upload"
-                ? "border-brand-600 text-brand-600 font-semibold"
-                : "border-transparent text-ink-500 hover:text-ink-800"
-            }`}
-          >
-            Upload Document (PDF / DOCX / TXT)
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-100 pb-3 mb-4 text-sm font-medium">
+          <div className="flex gap-4">
+            <button
+              type="button"
+              onClick={() => setIntakeMode("paste")}
+              className={`pb-2 border-b-2 transition-colors ${
+                intakeMode === "paste"
+                  ? "border-brand-600 text-brand-600 font-semibold"
+                  : "border-transparent text-ink-500 hover:text-ink-800"
+              }`}
+            >
+              Paste Clinical Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setIntakeMode("upload")}
+              className={`pb-2 border-b-2 transition-colors ${
+                intakeMode === "upload"
+                  ? "border-brand-600 text-brand-600 font-semibold"
+                  : "border-transparent text-ink-500 hover:text-ink-800"
+              }`}
+            >
+              Upload Document (PDF / DOCX / TXT)
+            </button>
+            <button
+              type="button"
+              onClick={() => setIntakeMode("fhir")}
+              className={`pb-2 border-b-2 transition-colors ${
+                intakeMode === "fhir"
+                  ? "border-brand-600 text-brand-600 font-semibold"
+                  : "border-transparent text-ink-500 hover:text-ink-800"
+              }`}
+            >
+              HL7 FHIR R4 JSON
+            </button>
+          </div>
+          {intakeMode === "fhir" && (
+            <button
+              type="button"
+              onClick={loadSampleFhir}
+              className="text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 font-semibold px-2.5 py-1 rounded"
+            >
+              Load Sample FHIR AdverseEvent
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -106,12 +167,20 @@ export default function Intake() {
           )}
 
           <label className="field-label">
-            {intakeMode === "upload" ? "Extracted Report Text Preview / Comments" : "Clinical Note / ADR Narrative"}
+            {intakeMode === "upload"
+              ? "Extracted Report Text Preview / Comments"
+              : intakeMode === "fhir"
+              ? "HL7 FHIR R4 JSON Payload (AdverseEvent or Bundle)"
+              : "Clinical Note / ADR Narrative"}
           </label>
           <textarea
             rows={12}
             className="field resize-y font-mono text-[13px] leading-relaxed"
-            placeholder="Paste clinical note, patient complaint, discharge summary, or medication history..."
+            placeholder={
+              intakeMode === "fhir"
+                ? '{\n  "resourceType": "AdverseEvent",\n  "subject": { "reference": "Patient/MRN-101" },\n  "event": { "text": "Anaphylaxis" },\n  "suspectEntity": [{ "instance": { "display": "Amoxicillin" } }]\n}'
+                : "Paste clinical note, patient complaint, discharge summary, or medication history..."
+            }
             value={rawText}
             onChange={(e) => setRawText(e.target.value)}
             required

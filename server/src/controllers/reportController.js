@@ -9,6 +9,10 @@ import { runPipeline } from "../utils/mlServiceClient.js";
 import { logAction } from "../middleware/auditLogger.js";
 import { enqueuePipelineJob, getJobStatus, executePipelineTask } from "../queue/pipelineQueue.js";
 import { parseClinicalDocument } from "../utils/documentParser.js";
+import { exportReportToFhir } from "../utils/fhirAdapter.js";
+import { transmitToRegulatoryGateway } from "../utils/regulatoryGateway.js";
+import { exportToBioNerFormat, exportToInstructionJsonl } from "../utils/datasetExporter.js";
+import { calculateReportSla, aggregateQueueSlaMetrics } from "../utils/slaAlertEngine.js";
 
 // Module 2 — intake (pasted text or file upload handled by multer in routes).
 export async function createReport(req, res) {
@@ -313,16 +317,8 @@ export async function exportFeedbackDataset(req, res) {
   });
 }
 
-// Phase 2B — ICH E2B(R3) ICSR XML Exporter for regulatory submission (FDA FAERS / EMA EudraVigilance)
-export async function exportReportE2BXml(req, res) {
-  const report = await Report.findById(req.params.id).populate("submittedBy", "name email role");
-  if (!report) return res.status(404).json({ error: "Report not found" });
-
-  const [extraction, classification] = await Promise.all([
-    Extraction.findOne({ report: report._id }).sort({ createdAt: -1 }),
-    Classification.findOne({ report: report._id }).sort({ createdAt: -1 }),
-  ]);
-
+// Helper to construct E2B(R3) ICSR XML
+export function buildReportE2BXml(report, extraction, classification) {
   const messageDate = new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14);
   const reportId = `PHARMAGUARD-${report._id.toString().toUpperCase()}`;
   const drugName = extraction?.drugName || "UNKNOWN_DRUG";
@@ -333,7 +329,7 @@ export async function exportReportE2BXml(req, res) {
   const meddraSoc = report.terminology?.meddraAdverseEvents?.[0]?.soc || "General disorders";
   const seriousnessCode = report.isSerious ? "1" : "2";
 
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <ichicsr lang="en">
   <ichicsrmessageheader>
     <messagetype>ichicsr</messagetype>
@@ -393,6 +389,20 @@ export async function exportReportE2BXml(req, res) {
     </summary>
   </safetyreport>
 </ichicsr>`;
+}
+
+// Phase 2B — ICH E2B(R3) ICSR XML Exporter for regulatory submission (FDA FAERS / EMA EudraVigilance)
+export async function exportReportE2BXml(req, res) {
+  const report = await Report.findById(req.params.id).populate("submittedBy", "name email role");
+  if (!report) return res.status(404).json({ error: "Report not found" });
+
+  const [extraction, classification] = await Promise.all([
+    Extraction.findOne({ report: report._id }).sort({ createdAt: -1 }),
+    Classification.findOne({ report: report._id }).sort({ createdAt: -1 }),
+  ]);
+
+  const reportId = `PHARMAGUARD-${report._id.toString().toUpperCase()}`;
+  const xml = buildReportE2BXml(report, extraction, classification);
 
   res.setHeader("Content-Type", "application/xml");
   res.setHeader("Content-Disposition", `attachment; filename="${reportId}.xml"`);
@@ -482,4 +492,90 @@ export async function updateReportCausality(req, res) {
 
   res.json({ ok: true, causality: report.causality });
 }
+
+// Direct Regulatory Gateway Transmission (FDA Electronic Submissions Gateway / EMA AS2)
+export async function transmitReportToGateway(req, res) {
+  const report = await Report.findById(req.params.id).populate("submittedBy", "name email role");
+  if (!report) return res.status(404).json({ error: "Report not found" });
+
+  const [extraction, classification] = await Promise.all([
+    Extraction.findOne({ report: report._id }).sort({ createdAt: -1 }),
+    Classification.findOne({ report: report._id }).sort({ createdAt: -1 }),
+  ]);
+
+  const xml = buildReportE2BXml(report, extraction, classification);
+  const transmissionResult = transmitToRegulatoryGateway(xml, report._id.toString(), req.body || {});
+
+  report.gatewayTransmission = {
+    status: transmissionResult.success ? "acknowledged" : "rejected",
+    gateway: transmissionResult.gateway || req.body?.gateway || "FDA_ESG",
+    transmissionId: transmissionResult.transmissionId,
+    transmittedAt: new Date(),
+    mdnStatus: transmissionResult.mdn?.status,
+    mdnMessage: transmissionResult.mdn?.disposition,
+    as2MessageId: transmissionResult.as2MessageId,
+  };
+
+  await report.save();
+
+  await logAction({
+    actor: req.user._id,
+    action: transmissionResult.success ? "report.gateway_transmit_success" : "report.gateway_transmit_failure",
+    report: report._id,
+    details: {
+      transmissionId: transmissionResult.transmissionId,
+      gateway: report.gatewayTransmission.gateway,
+      status: report.gatewayTransmission.status,
+    },
+  });
+
+  return res.json({
+    ok: transmissionResult.success,
+    gatewayTransmission: report.gatewayTransmission,
+    receipt: transmissionResult.mdn,
+  });
+}
+
+// Export report in HL7 FHIR R4 AdverseEvent JSON format
+export async function exportReportFhirJson(req, res) {
+  const report = await Report.findById(req.params.id).populate("submittedBy", "name email role");
+  if (!report) return res.status(404).json({ error: "Report not found" });
+
+  const [extraction, classification] = await Promise.all([
+    Extraction.findOne({ report: report._id }).sort({ createdAt: -1 }),
+    Classification.findOne({ report: report._id }).sort({ createdAt: -1 }),
+  ]);
+
+  const fhirResource = exportReportToFhir(report, extraction, classification);
+  res.setHeader("Content-Type", "application/fhir+json");
+  return res.json(fhirResource);
+}
+
+// Active Learning Training Dataset Export (BIO NER or Instruction-Tuning JSONL)
+export async function exportActiveLearningDataset(req, res) {
+  const format = req.query.format || "instruction";
+  const examples = await FeedbackExample.find().sort({ createdAt: -1 }).limit(500);
+
+  if (format === "bio") {
+    const bioText = exportToBioNerFormat(examples);
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader("Content-Disposition", 'attachment; filename="clinical_ner_train.bio.txt"');
+    return res.send(bioText);
+  }
+
+  const jsonlText = exportToInstructionJsonl(examples);
+  res.setHeader("Content-Type", "application/x-jsonlines");
+  res.setHeader("Content-Disposition", 'attachment; filename="adr_instruction_tuning.jsonl"');
+  return res.send(jsonlText);
+}
+
+// Aggregated SLA urgency overview for regulatory queue monitoring
+export async function getSlaQueueSummary(req, res) {
+  const activeReports = await Report.find({
+    status: { $in: ["submitted", "processing", "pending_review", "needs_more_info"] },
+  });
+  const metrics = aggregateQueueSlaMetrics(activeReports);
+  return res.json({ ok: true, metrics });
+}
+
 

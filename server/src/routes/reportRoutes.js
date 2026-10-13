@@ -9,6 +9,10 @@ import {
   reviewReport,
   exportFeedbackDataset,
   exportReportE2BXml,
+  exportReportFhirJson,
+  transmitReportToGateway,
+  exportActiveLearningDataset,
+  getSlaQueueSummary,
   checkDuplicateReports,
   updateReportCausality,
 } from "../controllers/reportController.js";
@@ -25,14 +29,22 @@ router.post("/", requireRole("doctor", "admin"), upload.single("file"), createRe
 
 // Phase 2D: Curated gold-standard labeled feedback dataset export
 router.get("/eval/feedback-dataset", requireRole("pharmacist", "researcher", "admin"), exportFeedbackDataset);
+router.get("/eval/training-export", requireRole("pharmacist", "researcher", "admin"), exportActiveLearningDataset);
+
+// Phase 2B / SLA: Regulatory queue urgency metrics
+router.get("/sla/summary", requireRole("pharmacist", "researcher", "admin"), getSlaQueueSummary);
 
 // Queue + detail + async status — Pharmacists/Researchers/Admins can view.
 router.get("/", requireRole("pharmacist", "researcher", "admin"), listReports);
 router.get("/:id", requireRole("pharmacist", "researcher", "admin", "doctor"), getReport);
 router.get("/:id/status", requireRole("pharmacist", "researcher", "admin", "doctor"), getPipelineStatus);
 
-// Phase 2B: E2B(R3) ICSR XML Export
+// Phase 2B: E2B(R3) ICSR XML & FHIR R4 Export
 router.get("/:id/export/e2b", requireRole("pharmacist", "researcher", "admin"), exportReportE2BXml);
+router.get("/:id/export/fhir", requireRole("pharmacist", "researcher", "admin"), exportReportFhirJson);
+
+// Direct Regulatory Gateway Transmission (FDA ESG & EMA E2B)
+router.post("/:id/transmit-gateway", requireRole("pharmacist", "admin"), transmitReportToGateway);
 
 // Phase 2B: Duplicate ICSR check
 router.get("/:id/duplicate-check", requireRole("pharmacist", "researcher", "admin"), checkDuplicateReports);
