@@ -13,6 +13,7 @@ import { exportReportToFhir } from "../utils/fhirAdapter.js";
 import { transmitToRegulatoryGateway } from "../utils/regulatoryGateway.js";
 import { exportToBioNerFormat, exportToInstructionJsonl } from "../utils/datasetExporter.js";
 import { calculateReportSla, aggregateQueueSlaMetrics } from "../utils/slaAlertEngine.js";
+import { realtimeEventManager } from "../utils/realtimeEvents.js";
 
 // Module 2 — intake (pasted text or file upload handled by multer in routes).
 export async function createReport(req, res) {
@@ -37,6 +38,8 @@ export async function createReport(req, res) {
   });
 
   await logAction({ actor: req.user._id, action: "report.submit", report: report._id, details: { source, originalFilename } });
+
+  realtimeEventManager.broadcastReportCreated(report);
 
   res.status(201).json({ report });
 }
@@ -299,6 +302,8 @@ export async function reviewReport(req, res) {
     details: { comment, editedFields },
   });
 
+  realtimeEventManager.broadcastReportStatusChange(report, action, req.user._id);
+
   res.status(201).json({ review, report });
 }
 
@@ -529,6 +534,8 @@ export async function transmitReportToGateway(req, res) {
     },
   });
 
+  realtimeEventManager.broadcastGatewayTransmission(report, report.gatewayTransmission);
+
   return res.json({
     ok: transmissionResult.success,
     gatewayTransmission: report.gatewayTransmission,
@@ -576,6 +583,14 @@ export async function getSlaQueueSummary(req, res) {
   });
   const metrics = aggregateQueueSlaMetrics(activeReports);
   return res.json({ ok: true, metrics });
+}
+
+// Stream real-time regulatory SLA countdowns and critical alerts via Server-Sent Events (SSE)
+export async function streamSlaAlerts(req, res) {
+  const activeReports = await Report.find({
+    status: { $in: ["submitted", "processing", "pending_review", "needs_more_info"] },
+  }).lean();
+  realtimeEventManager.registerClient(req, res, activeReports);
 }
 
 

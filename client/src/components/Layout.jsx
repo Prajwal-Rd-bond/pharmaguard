@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { RoleBadge } from "./Badge";
+import RealtimeAlertBanner from "./RealtimeAlertBanner";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: DashboardIcon, roles: null },
@@ -78,6 +79,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
+        <RealtimeAlertBanner />
 
         <main className="flex-1 px-8 py-8">
           <div className="mx-auto max-w-6xl animate-fade-in">

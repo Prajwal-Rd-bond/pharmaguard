@@ -16,6 +16,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { rateLimiter } from "./middleware/rateLimiter.js";
 import { tracingMiddleware } from "./middleware/tracing.js";
 import { getDetailedHealth, getOperationalMetrics } from "./controllers/healthController.js";
+import { getSmartConfig } from "./controllers/fhirController.js";
 
 const app = express();
 
@@ -24,6 +25,10 @@ app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
 app.use(morgan("dev"));
 app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
+
+// HL7 SMART on FHIR Discovery (RFC 5785 / SMART App Launch Framework)
+app.get("/.well-known/smart-configuration", getSmartConfig);
 
 // General API rate limit: 200 requests per 15 minutes
 app.use("/api", rateLimiter({ windowMs: 15 * 60 * 1000, max: 200 }));

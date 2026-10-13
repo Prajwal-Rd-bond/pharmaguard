@@ -314,6 +314,31 @@ export function getFhirCapabilityStatement() {
     rest: [
       {
         mode: "server",
+        security: {
+          cors: true,
+          service: [
+            {
+              coding: [
+                {
+                  system: "http://terminology.hl7.org/CodeSystem/restful-security-service",
+                  code: "SMART-on-FHIR",
+                  display: "SMART-on-FHIR OAuth2 Profile",
+                },
+              ],
+              text: "OAuth2 using SMART-on-FHIR profile",
+            },
+          ],
+          extension: [
+            {
+              url: "http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris",
+              extension: [
+                { url: "authorize", valueUri: "/api/fhir/auth/authorize" },
+                { url: "token", valueUri: "/api/fhir/auth/token" },
+                { url: "introspect", valueUri: "/api/fhir/auth/introspect" },
+              ],
+            },
+          ],
+        },
         resource: [
           {
             type: "AdverseEvent",

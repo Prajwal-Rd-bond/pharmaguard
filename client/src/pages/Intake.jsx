@@ -54,6 +54,24 @@ export default function Intake() {
     setIntakeMode("fhir");
   }
 
+  async function handleSimulateSmartLaunch(provider = "Epic") {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await api.post("/fhir/launch/simulate", { ehrProvider: provider });
+      setRawText(JSON.stringify(res.data.sampleFhirResource, null, 2));
+      setIntakeMode("fhir");
+      setStatus({
+        tone: "success",
+        text: `SMART-on-FHIR launch handshake completed with simulated ${provider} EHR. Access token issued with scopes '${res.data.tokenResponse.scope}' for Patient ${res.data.patient.name} (${res.data.patient.id}). FHIR AdverseEvent payload loaded below.`,
+      });
+    } catch (err) {
+      setStatus({ tone: "error", text: err.response?.data?.message || err.message || "Failed to simulate SMART launch." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setBusy(true);
@@ -138,13 +156,29 @@ export default function Intake() {
             </button>
           </div>
           {intakeMode === "fhir" && (
-            <button
-              type="button"
-              onClick={loadSampleFhir}
-              className="text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 font-semibold px-2.5 py-1 rounded"
-            >
-              Load Sample FHIR AdverseEvent
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={loadSampleFhir}
+                className="text-xs bg-ink-100 text-ink-700 hover:bg-ink-200 font-semibold px-2.5 py-1 rounded"
+              >
+                Sample FHIR
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSimulateSmartLaunch("Epic")}
+                className="text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-semibold px-2.5 py-1 rounded"
+              >
+                ⚡ Epic SMART Launch
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSimulateSmartLaunch("Cerner")}
+                className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-semibold px-2.5 py-1 rounded"
+              >
+                ⚡ Cerner SMART Launch
+              </button>
+            </div>
           )}
         </div>
 

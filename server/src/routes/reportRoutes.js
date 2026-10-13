@@ -13,6 +13,7 @@ import {
   transmitReportToGateway,
   exportActiveLearningDataset,
   getSlaQueueSummary,
+  streamSlaAlerts,
   checkDuplicateReports,
   updateReportCausality,
 } from "../controllers/reportController.js";
@@ -26,6 +27,9 @@ router.use(requireAuth);
 
 // Intake — Doctors submit, Admins can too.
 router.post("/", requireRole("doctor", "admin"), upload.single("file"), createReport);
+
+// Real-Time Regulatory SLA Alert & Notification Stream (SSE)
+router.get("/sla/stream", requireRole("pharmacist", "researcher", "admin", "doctor"), streamSlaAlerts);
 
 // Phase 2D: Curated gold-standard labeled feedback dataset export
 router.get("/eval/feedback-dataset", requireRole("pharmacist", "researcher", "admin"), exportFeedbackDataset);
