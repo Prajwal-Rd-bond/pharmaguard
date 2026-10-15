@@ -122,7 +122,10 @@ def classify(extraction: dict) -> dict:
     model_name = "rule_based_baseline"
     model_version = "0.2.0"
 
-    if clf_pipeline and symptoms:
+    symptoms_set = set(s.lower() for s in symptoms)
+    has_life_threatening_term = any(term in symptoms_set for term in LIFE_THREATENING_TERMS) or any(term in symptoms_text.lower() for term in LIFE_THREATENING_TERMS)
+
+    if clf_pipeline and symptoms and not has_life_threatening_term:
         try:
             probas = clf_pipeline.predict_proba([symptoms_text])[0]
             max_idx = np.argmax(probas)
@@ -132,10 +135,9 @@ def classify(extraction: dict) -> dict:
         except Exception as e:
             print(f"ML classification failed: {e}. Falling back to rules.")
 
-    if severity is None:
-        # Rule-based fallback
-        symptoms_set = set(s.lower() for s in symptoms)
-        if any(term in symptoms_set for term in LIFE_THREATENING_TERMS) or any(term in symptoms_text.lower() for term in LIFE_THREATENING_TERMS):
+    if severity is None or has_life_threatening_term:
+        # Rule-based fallback or clinical safety override
+        if has_life_threatening_term:
             severity, confidence = "life_threatening", 0.9
         elif any(term in symptoms_set for term in SERIOUS_TERMS) or any(term in symptoms_text.lower() for term in SERIOUS_TERMS):
             severity, confidence = "serious", 0.8
