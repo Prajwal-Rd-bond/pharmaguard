@@ -25,6 +25,7 @@
 - [Executive Overview](#executive-overview)
 - [Key Architectural Highlights](#key-architectural-highlights)
 - [User Interface & Operations Tour](#user-interface--operations-tour)
+  - [0. System Initialization & Cinematic Intro](#0-system-initialization--cinematic-intro)
   - [1. Authentication & Role Portal](#1-authentication--role-portal)
   - [2. Safety Operations Action Center](#2-safety-operations-action-center)
   - [3. Adverse Event Case Management](#3-adverse-event-case-management)
@@ -80,6 +81,19 @@ PharmaGuard reconciles clinical speed with strict data integrity:
 ---
 
 ## User Interface & Operations Tour
+
+### 0. System Initialization & Cinematic Intro
+A dedicated clinical initialization sequence powered by Framer Motion, featuring medical grid aesthetics, molecular geometry, SVG shield assembly with an ECG sweep, and a real-time status ticker.
+
+<div align="center">
+  <img src="docs/screenshots/00-loading-intro-screen.png" alt="PharmaGuard System Initialization Screen" width="900" />
+</div>
+
+- **Scientific Aesthetics:** Background 32px lab coordinate grid with dynamic radial teal gradients and corner registration marks.
+- **Micro-Interactions:** Five-stage SVG build featuring shield tracing, capsule drop spring animation, and ECG heart pulse wave.
+- **Accessibility & Performance:** Automatically respects `prefers-reduced-motion` settings and supports one-click or keyboard bypass (`Escape` / `Enter` / "Skip intro →").
+
+---
 
 ### 1. Authentication & Role Portal
 Clean, modern authentication gateway with dual-factor TOTP flow, brute-force rate limit protection, and quick demo role selection.

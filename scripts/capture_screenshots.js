@@ -47,6 +47,15 @@ async function main() {
 
   const page = await browser.newPage();
 
+  // 0. Capture Loading Intro Screen
+  console.log('0. Capturing loading intro screen...');
+  await page.evaluateOnNewDocument(() => {
+    sessionStorage.removeItem('pg_intro_seen');
+  });
+  await page.goto('http://localhost:5173/?intro=1', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 3200));
+  await page.screenshot({ path: path.join(screenshotsDir, '00-loading-intro-screen.png') });
+
   // 1. Capture Login Screen
   console.log('1. Capturing login screen...');
   await page.goto('http://localhost:5173/login?intro=1', { waitUntil: 'networkidle2' });
@@ -121,3 +130,4 @@ main().catch(err => {
   console.error('Capture error:', err);
   process.exit(1);
 });
+
