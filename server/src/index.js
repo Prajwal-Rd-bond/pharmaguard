@@ -35,16 +35,13 @@ app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 // HL7 SMART on FHIR Discovery (RFC 5785 / SMART App Launch Framework)
 app.get("/.well-known/smart-configuration", getSmartConfig);
 
-// General API rate limit: 200 requests per 15 minutes
-app.use("/api", rateLimiter({ windowMs: 15 * 60 * 1000, max: 200 }));
-
-// Auth rate limit: 20 attempts per 15 minutes to mitigate brute-force
-const authLimiter = rateLimiter({ windowMs: 15 * 60 * 1000, max: 20, message: "Too many authentication attempts, please try again later." });
+// General API rate limit: 1000 requests per 15 minutes
+app.use("/api", rateLimiter({ windowMs: 15 * 60 * 1000, max: 1000 }));
 
 app.get("/api/health", getDetailedHealth);
 app.get("/api/metrics", getOperationalMetrics);
 
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/signals", signalRoutes);

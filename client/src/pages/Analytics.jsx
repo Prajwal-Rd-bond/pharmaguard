@@ -374,16 +374,29 @@ export default function Analytics() {
                   <div className="mt-8">
                     <p className="text-xs font-bold text-ink-400 uppercase tracking-wider mb-3">Linked MedDRA Preferred Terms & System Organ Classes</p>
                     <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                      {(graphData.nodes || graphData.reactions || []).map((node, i) => (
+                      {(graphData.nodes || []).map((node, i) => (
                         <div key={i} className="rounded-lg border border-ink-700 bg-ink-800/80 p-3 hover:border-indigo-400 transition">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-white">{node.name || node.pt || node.reaction}</span>
-                            <span className="text-[9px] rounded bg-indigo-500/20 px-1.5 py-0.5 font-semibold text-indigo-300">
-                              {node.soc || "MedDRA PT"}
+                            <span className="text-xs font-bold text-white">{node.label || node.name || node.id}</span>
+                            <span className={`text-[9px] rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${
+                              node.type === "adverse_event"
+                                ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                : node.type === "organ_system"
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                : node.type === "drug_class"
+                                ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                : node.type === "risk_factor"
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                            }`}>
+                              {node.type?.replace("_", " ") || "MedDRA PT"}
                             </span>
                           </div>
-                          {node.signal && (
-                            <p className="mt-1 text-[11px] text-amber-300">PRR: {node.signal.prr} &bull; ROR: {node.signal.ror}</p>
+                          {node.meddra_pt && (
+                            <p className="mt-1.5 text-[11px] text-ink-300">PT: <span className="text-white font-medium">{node.meddra_pt}</span></p>
+                          )}
+                          {node.category && (
+                            <p className="mt-1 text-[11px] text-ink-400">Class: {node.category}</p>
                           )}
                         </div>
                       ))}
@@ -400,3 +413,4 @@ export default function Analytics() {
     </div>
   );
 }
+
