@@ -22,7 +22,6 @@ function IntroGuard({ children }) {
   const location = useLocation();
 
   useEffect(() => {
-    console.log("IntroGuard running", { pathname: location.pathname, pg_intro_seen: sessionStorage.getItem('pg_intro_seen') });
     // If they haven't seen the intro and they try to load /login, send them to the intro first
     // Note: We bypass this check if ?intro=1 is in the URL for testing
     const params = new URLSearchParams(location.search);

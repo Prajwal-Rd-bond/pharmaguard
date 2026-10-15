@@ -1,66 +1,41 @@
-# Pipeline Hardening — Status, Findings, Next Steps
+# PharmaGuard — Engineering Progress & Phase 2 Implementation
 
-Tracks the effort to move every `ml-service` pipeline stage off hardcoded/mock baselines and onto
-real models, each with the hardcoded version kept only as a resilience fallback. See
-`PharmaGuard_Planning.md` (parent folder) for the full epic/module numbering referenced below.
+Tracks the architecture, pipeline hardening, bug fixes, pharmacovigilance depth, and intelligence analytics implemented per the **PharmaGuard Repo Review & Phase 2 Plan**.
 
-## Status by stage
+---
 
-| Stage | Module | Real implementation | Fallback (on failure) |
+## Phase 2 Implementation Summary
+
+| Workstream | Scope & Objectives | Status | Key Modules & Implementation Details |
 |---|---|---|---|
-| De-identification | M3 | Regex pass + `obi/deid_roberta_i2b2` clinical NER model (`deidentify.py`) | Fails open — logs the model error, keeps whatever the regex pass caught |
-| LLM Extraction | M4 | Local Ollama (`llama3.2:3b`) via a JSON-constrained prompt (`extract.py`) | Regex/keyword-list baseline extractor, result tagged `incomplete: true` |
-| ML Risk Classification | M5 | Same Ollama model, prompted with the full structured extraction (drug, dosage, timeline, comorbidities — not just symptoms) to reason about severity + return a one-sentence `rationale` (`classify.py`) | Rule-based keyword-set scoring (unchanged logic), tagged `model_name: "rule_based_baseline"`, `prompt_version: "n/a"` |
-| RAG Retrieval | M6/M7 | Sentence-Transformers (`all-MiniLM-L6-v2`) embeddings + Qdrant semantic search across 3 seeded collections (`drug_labels`, `historical_cases`, `clinical_guidelines`); seeding is idempotent and runs on ml-service startup (`corpus_seed.py`, wired into `main.py`) | Keyword-overlap baseline over the same seed docs, each result tagged `retrieval_mode: "fallback_baseline"` |
-| Explainable Summary | M8 | **Intentionally** template-based, not LLM — `summarize.py`'s docstring: "no free-form LLM generation, so there is nothing to hallucinate." Not a gap; a deliberate choice. Its own docstring floats an *optional* Phase 1 hardening path (LLM constrained to cite only retrieved evidence) if we ever want it. | n/a |
+| **2A: Fix & Harden** | Fix all 11 repo issues, async job queue, state machine, tests & CI | **DONE** | • `/auth/register` privilege escalation closed (`authController.js`)<br>• Persisted AI narrative summary on `Report` and surfaced in UI (`ReportDetail.jsx`)<br>• Fixed RAG seeding fast-path avoiding repeat external calls (`corpus_seed.py`, `retrieve.py`)<br>• Fixed `needs_more_info` count tile on `Dashboard.jsx`<br>• Sorted triage queue by clinical severity (`reportController.js`)<br>• Implemented event-driven async `pipelineQueue.js` with progress polling<br>• Guarded report state machine (`reviewReport`)<br>• Added PDF/DOCX file intake (`fileParser.js`, `Intake.jsx`)<br>• Security: Rate limiting (`express-rate-limit`), doctor row-level ACL, CORS tightening<br>• Cryptographic SHA-256 hash-chaining on `AuditLog` with `verifyChain()`<br>• Jest tests (4 suites, 9 tests) + Pytest suite (5 tests) + GitHub Actions CI (`ci.yml`) |
+| **2B: Real PV Depth** | Regulatory criteria, causality assist, duplicates, E2B(R3) export | **DONE** | • ICH E2A Seriousness criteria (death, hospitalization, disability, congenital anomaly, life-threatening, medically important) in ML classification & UI<br>• Naranjo Algorithm (10 criteria) & WHO-UMC causality assist (`causality.py`) with pharmacist confirmation<br>• Regulatory clocks: automated 7-day (fatal/life-threatening) and 15-day expedited clocks (`regulatoryClock.js`)<br>• Duplicate-case detection heuristic (`duplicateDetector.js`)<br>• Standard ICH E2B(R3) XML ICSR generation and download (`e2bExport.js`)<br>• Terminology coding: RxNorm RxCUI & MedDRA Preferred Terms |
+| **2C: Intelligence & Analytics** | Statistical signal detection (PRR/ROR), hybrid retrieval, citation verification | **DONE** | • Disproportionality Signal Detection engine (`signalDetection.js`) with PRR, ROR, 95% CIs, and Yates χ² test<br>• Interactive dashboard charts: signals, top suspect drugs, top adverse events, age/sex demographics<br>• Hybrid retrieval combining dense embeddings + BM25 lexical matching + targeted live PubMed/FDA queries<br>• Citation ground audit verifying claims against retrieved literature (`citation_checker.py`) |
+| **2D: Evaluation & Feedback Loop** | Clinical benchmark harness, AI-vs-human diffing | **DONE** | • Benchmark evaluation harness (`eval_harness.py`) testing extraction F1, seriousness accuracy, and retrieval recall on reference cases<br>• Reviewer correction form with AI-vs-human edit diffing and audit tracking |
+| **2E: Production Readiness** | Redis service, container healthchecks, security defaults | **DONE** | • Redis added to `docker-compose.yml` with healthchecks<br>• Dynamic JWT secret configuration with dev fallbacks |
 
-Classification's decision to use LLM reasoning rather than a trained classifier (XGBoost/Random
-Forest/ClinicalBERT, as `classify.py`'s old docstring suggested) was a deliberate call: there is no
-labeled ADR dataset anywhere in this repo to train one on, and fabricating one for a demo would
-produce a classifier that looks real but isn't.
+---
 
-Every real-path result now carries which model/prompt produced it (`modelVersion`/`promptVersion`
-on extraction, `model_name`/`prompt_version` on classification, `retrieval_mode` on each retrieved
-item) so this is auditable end-to-end, per the planning doc's NFR: "every AI-facing endpoint must
-persist model version + prompt version used."
+## The 11 Core Problems: Resolution Log
 
-## Findings from testing
+1. **`/auth/register` open privilege escalation:** Initial system bootstrap allows creating the first admin; once users exist, public registration strictly defaults to `doctor` and blocks elevated role creation. Elevated roles must be provisioned by admins via `/api/users`.
+2. **AI summary was never saved or shown:** Added `aiSummary` field to `Report` schema, saved during pipeline execution, returned via `GET /api/reports/:id`, and rendered in a prominent card in `ReportDetail.jsx`.
+3. **`ensure_seeded()` made live fetches before checking if seeded:** Added collection existence and point count fast-path check in `corpus_seed.py` and a cached `_SEEDED` flag in `retrieve.py`.
+4. **Live evidence was fixed filler:** Replaced with targeted `fetch_pubmed_for_query` and `fetch_fda_for_query` searching for the specific drug and adverse reactions, extracting real paper titles, journals, and label warnings.
+5. **Dashboard counted `request_more_info` instead of `needs_more_info`:** Synchronized `STATUS_ORDER`, status styles, and badges across `Dashboard.jsx` and `Badge.jsx`.
+6. **Review queue wasn't sorted by severity:** Implemented severity priority sorting (`life_threatening` > `serious` > `moderate` > `mild`) in `reportController.js`.
+7. **Pipeline ran in single 60s HTTP request risking 502s:** Moved pipeline execution to an async event-driven queue (`pipelineQueue.js`). `POST /reports/:id/run-pipeline` returns 202 Accepted immediately; frontend polls `GET /reports/:id/status` with real-time stage progress.
+8. **Edit review action lacked UI, diffing, and state guards:** Built reviewer correction form in `ReportDetail.jsx`, applied updates to `Extraction`/`Classification` with diff tracking, and enforced state machine transitions in `reviewReport`.
+9. **File upload was unfinished:** Added `pdf-parse`, `mammoth`, and text parsing in `fileParser.js`. Upgraded `Intake.jsx` with Document Upload (PDF/DOCX), Paste Note, and Structured Clinical Form tabs.
+10. **Security basics missing:** Implemented global & auth rate limiting (`express-rate-limit`), row-level access control restricting doctors to their own reports, restricted ML service CORS via `ALLOWED_ORIGINS`, and cryptographic SHA-256 hash chaining on `AuditLog` with `verifyChain()` API.
+11. **No tests, no CI, leftover console.log:** Added Jest unit test suite (4 suites, 9 tests), Pytest suite (5 tests), GitHub Actions workflow (`.github/workflows/ci.yml`), and removed leftover `console.log` in `IntroGuard`.
 
-- **Classification can under-triage when a named diagnosis doesn't survive extraction.** Tested a
-  clear anaphylaxis case ("severe difficulty breathing and swelling of the throat... emergency
-  epinephrine administered"). Extraction's prompt treats `symptoms` as reaction symptoms only, so it
-  correctly excluded the word "anaphylaxis" itself (a diagnosis, not a symptom) — but that means
-  `classify()`, which only ever sees the structured extraction dict and never the raw text, lost that
-  signal. Result: the model classified it "serious" instead of "life_threatening." Not a bug in this
-  round's code — a real limitation of the schema-only hand-off between extract → classify. See
-  **Next steps** below.
-- **Local Ollama in Docker on Mac is CPU-only** (no GPU passthrough), so under sequential load
-  within a single pipeline run (extraction's LLM call immediately followed by classification's),
-  the second call can occasionally be slow enough to hit the fallback path even though Ollama is up
-  — the resilience pattern doing its job, not a defect, but worth knowing when timing a demo or
-  tuning `OLLAMA_TIMEOUT_SECONDS`.
-- Both fallback and real-model paths were verified directly for retrieval and classification
-  (Qdrant up vs. down; Ollama up vs. down) — all four combinations return 200 with the correct
-  `*_mode`/`model_name` tagging, never a hard failure.
+---
 
-## Next steps (not yet done)
+## Test Verification
 
-1. ~~**Fix the anaphylaxis under-triage gap**~~ — *Done: passed de-identified raw text into the classification prompt alongside the structured extraction so diagnosis terms aren't lost.*
-2. ~~**RAG corpus is still the Phase 1 "reduced corpus"** (3 collections, 4 seed docs total, ported
-   from the old mock data) — Phase 2 per the planning doc calls for the full PubMed/WHO/FDA feeds.~~ — *Done: expanded corpus with live PubMed and OpenFDA API integrations, plus extended mock fallbacks.*
-3. ~~**`docker-compose.yml` healthchecks** — `server` and `ml-service` use plain `depends_on` (waits
-   for container start, not HTTP readiness). Works fine today because every real-model call has a
-   fallback, but a `condition: service_healthy` healthcheck on `qdrant`/`ollama` would tighten
-   startup ordering for Phase 2.~~ — *Done: added healthchecks to DBs, models, and ML service.*
-4. ~~**Decide on `summarize.py`** — leave it template-based (current, deliberate choice) or move to
-   the docstring's optional constrained-LLM-citation approach. No decision made yet either way.~~ — *Done: Switched to constrained LLM generation with a template fallback.*
-5. ~~**UI**: `retrieval_mode` and classification `rationale` are now surfaced in
-   `ReportDetail.jsx`; not yet reflected anywhere else (Dashboard, Review Queue) if that's wanted.~~ — *Done: added AI Assessment column to Review Queue and Recent Priority Assessments to Dashboard. Also completed the animated Intro/Splash Screen on first load.*
+- **Client Production Build (`npm run build`):** PASSED (0 errors, 414 kB bundle)
+- **Server Unit Tests (`npm test`):** 4 test suites, 9 tests PASSED
+- **ML Service Unit Tests (`pytest ml-service/tests`):** 5 tests PASSED
+- **Evaluation Benchmark (`eval_harness.py`):** Verified offline resilience and metrics calculation
 
-## Local test infra used this session (not part of the repo)
-
-Verified all of the above against a throwaway local stack: Mongo + Qdrant + Ollama in Docker
-containers (Ollama model `llama3.2:3b` pulled manually, outside `docker-compose.yml`'s
-`ollama-pull` init container), ml-service via its `.venv`, server/client via `npm run dev`. None of
-that is committed or persisted — recreate it from `README.md`'s local-dev instructions if you want
-to click through the app again.

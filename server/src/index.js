@@ -52,6 +52,12 @@ const PORT = process.env.PORT || 5000;
 
 async function start() {
   await connectDB(process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard");
+  try {
+    const { seedDatabase } = await import("./seed.js");
+    await seedDatabase();
+  } catch (err) {
+    console.warn("[server] Auto-seed status:", err.message);
+  }
   app.listen(PORT, () => console.log(`[server] PharmaGuard API listening on :${PORT}`));
 }
 

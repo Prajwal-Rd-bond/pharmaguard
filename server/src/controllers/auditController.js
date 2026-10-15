@@ -16,3 +16,4 @@ export async function verifyAudit(req, res) {
   const result = await verifyAuditChain();
   res.json(result);
 }
+

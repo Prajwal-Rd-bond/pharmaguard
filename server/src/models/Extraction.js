@@ -19,6 +19,16 @@ const extractionSchema = new mongoose.Schema(
     comorbidities: [String],
     concomitantDrugs: [String],
     incomplete: { type: Boolean, default: false }, // flagged instead of silently dropped
+    rxNormId: String, // RxNorm RxCUI standard drug code
+    meddraCodes: [
+      {
+        term: String,
+        pt: String, // MedDRA Preferred Term
+        soc: String, // System Organ Class
+        code: String,
+      },
+    ],
+    originalAiExtraction: { type: mongoose.Schema.Types.Mixed }, // Preserves original AI output if edited
     modelVersion: String,
     promptVersion: String,
   },

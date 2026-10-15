@@ -129,6 +129,58 @@ export default function Login() {
             <button type="submit" disabled={busy} className="btn-primary mt-2 w-full py-2.5">
               {busy ? "Signing in…" : "Log in"}
             </button>
+
+            <div className="mt-6 border-t border-ink-200/80 pt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                Quick Demo Access (1-Click Fill)
+              </p>
+              <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("pharmacist@pharmaguard.org");
+                    setPassword("Pharma@12345");
+                  }}
+                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                >
+                  <span className="block font-semibold text-brand-600">Pharmacist</span>
+                  <span className="text-[10px] text-ink-500">Full Triage & Review</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("admin@pharmaguard.org");
+                    setPassword("Admin@12345");
+                  }}
+                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                >
+                  <span className="block font-semibold text-brand-600">Administrator</span>
+                  <span className="text-[10px] text-ink-500">Full Audit & Users</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("doctor@pharmaguard.org");
+                    setPassword("Doctor@12345");
+                  }}
+                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                >
+                  <span className="block font-semibold text-brand-600">Doctor</span>
+                  <span className="text-[10px] text-ink-500">Report Intake</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("researcher@pharmaguard.org");
+                    setPassword("Research@12345");
+                  }}
+                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                >
+                  <span className="block font-semibold text-brand-600">Researcher</span>
+                  <span className="text-[10px] text-ink-500">Signals & Stats</span>
+                </button>
+              </div>
+            </div>
           </form>
         </div>
       </div>

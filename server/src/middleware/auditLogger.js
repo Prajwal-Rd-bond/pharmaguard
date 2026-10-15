@@ -7,6 +7,8 @@ export async function logAction({ actor, actorType = "user", action, report, pip
   return await AuditLog.create({ actor, actorType, action, report, pipelineRunId, modelVersion, details });
 }
 
+export const recordAuditLog = logAction;
+
 // Verifies that the audit log chain has not been tampered with or truncated
 export async function verifyAuditChain() {
   const logs = await AuditLog.find().sort({ createdAt: 1 });

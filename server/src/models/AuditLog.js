@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import crypto from "crypto";
 
 // Module 12 — Cryptographically hash-chained, tamper-evident, append-only audit trail.

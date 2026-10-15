@@ -184,9 +184,9 @@ export async function enqueuePipelineJob({ reportId, userId }) {
   return { jobId, status: "queued", engine: "in_process" };
 }
 
-/**
- * Get status of an enqueued pipeline job.
- */
 export function getJobStatus(jobId) {
   return jobStates.get(jobId) || { status: "unknown" };
 }
+
+export const enqueueReportPipeline = enqueuePipelineJob;
+
