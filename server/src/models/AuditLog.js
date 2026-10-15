@@ -13,15 +13,19 @@ const auditLogSchema = new mongoose.Schema(
     details: { type: mongoose.Schema.Types.Mixed },
     prevHash: { type: String, default: "GENESIS" },
     hash: { type: String },
+    sequenceNumber: { type: Number, index: true },
   },
   { timestamps: true, capped: false }
 );
 
-// Compute hash before saving new audit entries
+// Compute hash and sequence number before saving new audit entries
 auditLogSchema.pre("save", async function (next) {
   if (this.isNew) {
+    const lastEntry = await this.constructor.findOne().sort({ sequenceNumber: -1, createdAt: -1 });
+    if (!this.sequenceNumber) {
+      this.sequenceNumber = (lastEntry?.sequenceNumber || 0) + 1;
+    }
     if (!this.prevHash || this.prevHash === "GENESIS") {
-      const lastEntry = await this.constructor.findOne().sort({ createdAt: -1 });
       this.prevHash = lastEntry?.hash || "GENESIS";
     }
 

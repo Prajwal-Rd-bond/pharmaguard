@@ -40,6 +40,26 @@ ROUTE_KEYWORDS = {"oral": "oral", "iv": "intravenous", "intravenous": "intraveno
 client = genai.Client() if (genai is not None and os.environ.get("GEMINI_API_KEY")) else None
 
 
+def parse_onset_timeline(text: str) -> str | None:
+    """
+    Extracts onset duration anchor (number + unit + anchor pattern) instead of naive keyword matching.
+    Returns standardized timeline string or None if unstated.
+    """
+    patterns = [
+        r"(?:within|in|after)\s+(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\b",
+        r"(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\s*(?:after|post|following)\b",
+        r"(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\s*later\b",
+    ]
+    lower = text.lower()
+    for p in patterns:
+        m = re.search(p, lower)
+        if m:
+            num, unit = m.group(1), m.group(2)
+            unit_str = f"{unit}s" if num != "1" else unit
+            return f"within {num} {unit_str}"
+    return None
+
+
 def extract(text: str) -> dict:
     if client:
         try:
@@ -55,6 +75,7 @@ def extract(text: str) -> dict:
             result = ExtractionResult.model_validate_json(response.text).model_dump()
             result["modelVersion"] = "gemini-2.5-pro-extraction"
             result["promptVersion"] = "v2"
+            result["extractionMode"] = "llm_gemini"
             result["incomplete"] = not (result.get("drugName") and result.get("symptoms"))
             result["terminology"] = {
                 "drug_rxnorm": code_drug_to_rxnorm(result.get("drugName")),
@@ -85,13 +106,14 @@ def extract(text: str) -> dict:
         "route": route,
         "duration": duration_match.group(1) if duration_match else None,
         "symptoms": symptoms,
-        "onsetTimeline": "within 2 hours" if "hour" in lower else ("within 5 days" if "day" in lower else None),
+        "onsetTimeline": parse_onset_timeline(text),
         "age": int(age_match.group(1)) if age_match else None,
         "gender": gender_match.group(1) if gender_match else None,
         "comorbidities": [],
         "concomitantDrugs": [],
         "modelVersion": "extraction-stub-0.2",
         "promptVersion": "v2",
+        "extractionMode": "regex_baseline",
     }
     # Flag rather than silently drop when core fields are missing
     result["incomplete"] = not (result["drugName"] and result["symptoms"])

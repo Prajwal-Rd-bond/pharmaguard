@@ -5,8 +5,9 @@ import RealtimeAlertBanner from "./RealtimeAlertBanner";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: DashboardIcon, roles: null },
+  { to: "/cases", label: "Cases", icon: QueueIcon, roles: null },
   { to: "/intake", label: "Submit Report", icon: PlusIcon, roles: ["doctor", "admin"] },
-  { to: "/queue", label: "Review Queue", icon: QueueIcon, roles: ["pharmacist", "admin", "researcher"] },
+  { to: "/analytics", label: "Signal Analytics", icon: AnalyticsIcon, roles: ["pharmacist", "admin", "researcher"] },
   { to: "/audit-logs", label: "Audit Log", icon: LogIcon, roles: ["admin", "pharmacist"] },
   { to: "/users", label: "Users", icon: UsersIcon, roles: ["admin"] },
 ];
@@ -19,17 +20,24 @@ export default function Layout() {
   const visibleItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(user?.role));
 
   return (
-    <div className="flex min-h-screen bg-ink-50">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-ink-100 bg-ink-950 text-ink-100">
-        <div className="flex items-center gap-2.5 px-6 py-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-glow">
-            <ShieldIcon />
+    <div className="flex min-h-screen flex-col bg-ink-50">
+      {/* Top Regulatory Environment Ribbon */}
+      <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-wider text-amber-800 flex items-center justify-center gap-2 select-none z-50">
+        <span className="inline-block w-2 h-2 rounded-full bg-amber-600 animate-pulse"></span>
+        SIMULATED DATA, NOT FOR REGULATORY USE &bull; RESEARCH & DEMO PROTOTYPE ONLY
+      </div>
+
+      <div className="flex flex-1">
+        <aside className="flex w-64 shrink-0 flex-col border-r border-ink-100 bg-ink-950 text-ink-100">
+          <div className="flex items-center gap-2.5 px-6 py-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-glow">
+              <ShieldIcon />
+            </div>
+            <div>
+              <p className="text-base font-bold leading-tight text-white">PharmaGuard</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-ink-400">Drug Safety Intel</p>
+            </div>
           </div>
-          <div>
-            <p className="text-base font-bold leading-tight text-white">PharmaGuard</p>
-            <p className="text-[11px] font-medium uppercase tracking-wider text-ink-400">Drug Safety Intel</p>
-          </div>
-        </div>
 
         <nav className="flex-1 space-y-1 px-3 py-2">
           {visibleItems.map((item) => {
@@ -88,6 +96,7 @@ export default function Layout() {
         </main>
       </div>
     </div>
+  </div>
   );
 }
 
@@ -102,6 +111,16 @@ function ShieldIcon() {
 
 function iconProps(className) {
   return { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className };
+}
+
+function AnalyticsIcon({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
 }
 
 function DashboardIcon({ className }) {

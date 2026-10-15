@@ -1,17 +1,30 @@
 import crypto from "crypto";
 import AuditLog from "../models/AuditLog.js";
 
+let writeLock = Promise.resolve();
+
 // Module 12 — call this from controllers after any state-changing action.
-// Never exposed for update/delete: append-only with cryptographic hash chaining.
+// Never exposed for update/delete: append-only with cryptographic hash chaining and sequence serialization.
 export async function logAction({ actor, actorType = "user", action, report, pipelineRunId, modelVersion, details }) {
-  return await AuditLog.create({ actor, actorType, action, report, pipelineRunId, modelVersion, details });
+  return new Promise((resolve, reject) => {
+    writeLock = writeLock
+      .catch(() => {})
+      .then(async () => {
+        try {
+          const entry = await AuditLog.create({ actor, actorType, action, report, pipelineRunId, modelVersion, details });
+          resolve(entry);
+        } catch (err) {
+          reject(err);
+        }
+      });
+  });
 }
 
 export const recordAuditLog = logAction;
 
 // Verifies that the audit log chain has not been tampered with or truncated
 export async function verifyAuditChain() {
-  const logs = await AuditLog.find().sort({ createdAt: 1 });
+  const logs = await AuditLog.find().sort({ sequenceNumber: 1, createdAt: 1 });
   let expectedPrevHash = "GENESIS";
 
   for (let i = 0; i < logs.length; i++) {

@@ -47,7 +47,7 @@ def run_pipeline(req: PipelineRequest):
     """
     deidentified_text, deid_log = deidentify(req.raw_text)
     extraction = extract(deidentified_text)
-    classification = classify(extraction)
+    classification = classify(extraction, text=deidentified_text)
     retrievals = retrieve(extraction)
     summary = summarize(extraction, classification, retrievals)
     citation_verification = verify_summary_citations(summary, retrievals)
@@ -81,7 +81,7 @@ def extract_endpoint(req: PipelineRequest):
 @app.post("/pipeline/classify")
 def classify_endpoint(req: PipelineRequest):
     ext = extract(req.raw_text)
-    return classify(ext)
+    return classify(ext, text=req.raw_text)
 
 
 @app.post("/pipeline/causality")

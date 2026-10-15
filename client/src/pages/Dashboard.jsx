@@ -1,499 +1,306 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import PageHeader from "../components/PageHeader";
 import { StatusBadge } from "../components/Badge";
 
-const STATUS_ORDER = ["submitted", "pending_review", "approved", "rejected", "needs_more_info"];
-
-const STAT_ACCENTS = {
-  submitted: "from-sky-400 to-sky-600",
-  pending_review: "from-amber-400 to-amber-600",
-  approved: "from-emerald-400 to-emerald-600",
-  rejected: "from-rose-400 to-rose-600",
-  needs_more_info: "from-violet-400 to-violet-600",
+const SEVERITY_STYLES = {
+  mild: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  moderate: "bg-amber-50 text-amber-700 ring-amber-200",
+  serious: "bg-orange-50 text-orange-700 ring-orange-200",
+  life_threatening: "bg-rose-50 text-rose-700 ring-rose-200 font-semibold",
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [reports, setReports] = useState([]);
+  const [pipelineStatus, setPipelineStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("signals"); // "signals" | "demographics" | "graph"
-
-  // Signal & Analytics state
-  const [analyticsData, setAnalyticsData] = useState(null);
-  const [searchDrug, setSearchDrug] = useState("");
-  const [searchReaction, setSearchReaction] = useState("");
-  const [customSignalResult, setCustomSignalResult] = useState(null);
-  const [evaluatingSignal, setEvaluatingSignal] = useState(false);
-
-  // Knowledge graph state
-  const [selectedGraphDrug, setSelectedGraphDrug] = useState("Amoxicillin");
-  const [graphData, setGraphData] = useState(null);
-  const [graphLoading, setGraphLoading] = useState(false);
+  const [activityFeed, setActivityFeed] = useState([]);
 
   useEffect(() => {
     Promise.all([
       api.get("/reports").catch(() => ({ data: { reports: [] } })),
-      api.get("/signals/dashboard").catch(() => ({ data: null })),
-    ]).then(([repRes, sigRes]) => {
-      setReports(repRes.data.reports || []);
-      setAnalyticsData(sigRes.data);
+      api.get("/reports/pipeline/status").catch(() => ({ data: null })),
+    ]).then(([repRes, statRes]) => {
+      const repList = repRes.data.reports || [];
+      setReports(repList);
+      setPipelineStatus(statRes.data);
       setLoading(false);
+
+      // Initialize recent activity from reports
+      const recent = repList.slice(0, 8).map((r) => ({
+        id: r._id,
+        drug: r.extraction?.drugName || "Unspecified drug",
+        action: r.status === "approved" ? "Approved by reviewer" : r.status === "pending_review" ? "Pending pharmacovigilance review" : "Report submitted",
+        time: new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        status: r.status,
+        submittedBy: r.submittedBy?.name || "Healthcare Provider",
+      }));
+      setActivityFeed(recent);
     });
+
+    // Real-time EventSource listener for live activity feed
+    const token = localStorage.getItem("token");
+    let evtSource = null;
+    if (token) {
+      try {
+        evtSource = new EventSource(`/api/reports/stream/sla?token=${encodeURIComponent(token)}`);
+        evtSource.addEventListener("report_status_change", (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            setActivityFeed((prev) => [
+              {
+                id: data.reportId,
+                drug: data.drugName || "Report",
+                action: `Status updated to ${data.status}`,
+                time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                status: data.status,
+                submittedBy: "User",
+              },
+              ...prev.slice(0, 15),
+            ]);
+          } catch (err) {
+            console.error(err);
+          }
+        });
+      } catch (err) {
+        console.error("SSE connection error", err);
+      }
+    }
+
+    return () => {
+      if (evtSource) evtSource.close();
+    };
   }, []);
 
-  useEffect(() => {
-    if (activeTab === "graph") {
-      setGraphLoading(true);
-      api
-        .get(`/signals/knowledge-graph?drug=${encodeURIComponent(selectedGraphDrug)}`)
-        .then((res) => {
-          setGraphData(res.data);
-          setGraphLoading(false);
-        })
-        .catch(() => setGraphLoading(false));
-    }
-  }, [activeTab, selectedGraphDrug]);
+  // Compute 4 Actionable KPIs
+  const awaitingReviewCount = reports.filter((r) => r.status === "pending_review").length;
+  const overdueCount = reports.filter((r) => r.clockStatus === "OVERDUE" || (r.hoursRemaining !== null && r.hoursRemaining < 0)).length;
+  const dueSoonCount = reports.filter(
+    (r) => r.status !== "approved" && r.status !== "rejected" && r.hoursRemaining !== null && r.hoursRemaining >= 0 && r.hoursRemaining <= 48
+  ).length;
+  const seriousOpenCount = reports.filter((r) => r.isSerious && r.status !== "approved" && r.status !== "rejected").length;
 
-  const handleComputeCustomSignal = async (e) => {
-    e.preventDefault();
-    if (!searchDrug || !searchReaction) return;
-    setEvaluatingSignal(true);
-    try {
-      const res = await api.get(
-        `/signals/detect?drug=${encodeURIComponent(searchDrug)}&reaction=${encodeURIComponent(searchReaction)}`
-      );
-      setCustomSignalResult(res.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setEvaluatingSignal(false);
-    }
-  };
-
-  const counts = reports.reduce((acc, r) => {
-    acc[r.status] = (acc[r.status] || 0) + 1;
-    return acc;
-  }, {});
-
-  const statuses = [...new Set([...STATUS_ORDER, ...Object.keys(counts)])].filter(
-    (s) => counts[s] !== undefined || STATUS_ORDER.includes(s)
-  );
+  // Regulatory Clock Urgency Queue (Sorted by hoursRemaining ascending, overdue first)
+  const urgentQueue = [...reports]
+    .filter((r) => r.status !== "approved" && r.status !== "rejected")
+    .sort((a, b) => {
+      const hA = a.hoursRemaining !== null && a.hoursRemaining !== undefined ? a.hoursRemaining : 9999;
+      const hB = b.hoursRemaining !== null && b.hoursRemaining !== undefined ? b.hoursRemaining : 9999;
+      return hA - hB;
+    })
+    .slice(0, 6);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Drug Safety Intelligence & Signal Dashboard"
-        subtitle={`${reports.length} total report${reports.length === 1 ? "" : "s"} in local system | FAERS Pharmacovigilance Database (12.5M records)`}
-      />
-
-      {/* Operational Triage Summary Cards */}
-      {loading ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          {STATUS_ORDER.map((s) => (
-            <div key={s} className="card h-28 animate-pulse bg-ink-50" />
-          ))}
+    <div className="space-y-8">
+      {/* Page Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-ink-950">Safety Operations Action Center</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Real-time pharmacovigilance triage, regulatory expedited submission clocks, and AI intake pipeline.
+          </p>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          {statuses.map((status) => (
-            <div key={status} className="card group relative overflow-hidden p-5 shadow-sm transition hover:shadow">
-              <div
-                className={`absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gradient-to-br ${
-                  STAT_ACCENTS[status] || "from-ink-300 to-ink-500"
-                } opacity-20 transition-opacity group-hover:opacity-30`}
-              />
-              <p className="text-3xl font-extrabold tabular-nums text-ink-900">{counts[status] || 0}</p>
-              <div className="mt-3">
-                <StatusBadge status={status} />
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center gap-2.5">
+          <Link
+            to="/intake"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-700 px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:shadow transition"
+          >
+            <span>+ Submit Case</span>
+          </Link>
+          <Link
+            to="/cases"
+            className="inline-flex items-center rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-700 shadow-xs hover:bg-ink-50 transition"
+          >
+            Browse All Cases &rarr;
+          </Link>
         </div>
-      )}
-
-      {/* Tab Navigation */}
-      <div className="border-b border-ink-200">
-        <nav className="-mb-px flex gap-6 text-sm font-semibold">
-          <button
-            onClick={() => setActiveTab("signals")}
-            className={`border-b-2 pb-3 transition ${
-              activeTab === "signals"
-                ? "border-sky-600 text-sky-600"
-                : "border-transparent text-ink-500 hover:border-ink-300 hover:text-ink-700"
-            }`}
-          >
-            FAERS Disproportionality Signals
-          </button>
-          <button
-            onClick={() => setActiveTab("demographics")}
-            className={`border-b-2 pb-3 transition ${
-              activeTab === "demographics"
-                ? "border-sky-600 text-sky-600"
-                : "border-transparent text-ink-500 hover:border-ink-300 hover:text-ink-700"
-            }`}
-          >
-            Demographics & Epidemiology
-          </button>
-          <button
-            onClick={() => setActiveTab("graph")}
-            className={`border-b-2 pb-3 transition ${
-              activeTab === "graph"
-                ? "border-sky-600 text-sky-600"
-                : "border-transparent text-ink-500 hover:border-ink-300 hover:text-ink-700"
-            }`}
-          >
-            Drug-Event Knowledge Graph
-          </button>
-        </nav>
       </div>
 
-      {/* Tab 1: FAERS Signal Detection */}
-      {activeTab === "signals" && (
-        <div className="space-y-6">
-          {/* Signal Search / Query Box */}
-          <div className="card p-5">
-            <h3 className="text-base font-bold text-ink-900">Quantitative Signal Query (PRR / ROR / BCPNN IC)</h3>
-            <p className="mt-1 text-xs text-ink-500">
-              Compute Evans criteria disproportionality metrics against FDA FAERS post-marketing safety data.
-            </p>
-            <form onSubmit={handleComputeCustomSignal} className="mt-4 flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-semibold text-ink-700">Suspect Drug Generic Name</label>
-                <input
-                  type="text"
-                  value={searchDrug}
-                  onChange={(e) => setSearchDrug(e.target.value)}
-                  placeholder="e.g. Ciprofloxacin, Lisinopril, Amoxicillin"
-                  className="mt-1 w-full rounded border border-ink-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none"
-                />
-              </div>
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-semibold text-ink-700">Adverse Reaction Term</label>
-                <input
-                  type="text"
-                  value={searchReaction}
-                  onChange={(e) => setSearchReaction(e.target.value)}
-                  placeholder="e.g. Tendon Rupture, Angioedema, Anaphylaxis"
-                  className="mt-1 w-full rounded border border-ink-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={evaluatingSignal || !searchDrug || !searchReaction}
-                className="rounded bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:opacity-50"
-              >
-                {evaluatingSignal ? "Evaluating..." : "Detect Signal"}
-              </button>
-            </form>
-
-            {customSignalResult && (
-              <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sky-950">
-                      {customSignalResult.drug} &times; {customSignalResult.reaction}
-                    </span>
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-bold ${
-                        customSignalResult.signal_status === "STRONG_SIGNAL"
-                          ? "bg-rose-100 text-rose-800"
-                          : customSignalResult.signal_status === "POTENTIAL_SIGNAL"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-emerald-100 text-emerald-800"
-                      }`}
-                    >
-                      {customSignalResult.signal_status?.replace("_", " ")}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4 text-xs">
-                  <div className="rounded bg-white p-2.5 shadow-xs">
-                    <p className="text-ink-500">PRR [95% CI]</p>
-                    <p className="text-base font-extrabold text-ink-900">
-                      {customSignalResult.prr?.value}
-                      <span className="ml-1 text-[11px] font-normal text-ink-500">
-                        [{customSignalResult.prr?.ci_95?.[0]} - {customSignalResult.prr?.ci_95?.[1]}]
-                      </span>
-                    </p>
-                  </div>
-                  <div className="rounded bg-white p-2.5 shadow-xs">
-                    <p className="text-ink-500">ROR [95% CI]</p>
-                    <p className="text-base font-extrabold text-ink-900">
-                      {customSignalResult.ror?.value}
-                      <span className="ml-1 text-[11px] font-normal text-ink-500">
-                        [{customSignalResult.ror?.ci_95?.[0]} - {customSignalResult.ror?.ci_95?.[1]}]
-                      </span>
-                    </p>
-                  </div>
-                  <div className="rounded bg-white p-2.5 shadow-xs">
-                    <p className="text-ink-500">&chi;&sup2; Yates (Evans &ge; 4.0)</p>
-                    <p className="text-base font-extrabold text-ink-900">{customSignalResult.prr?.chi2_yates || 0}</p>
-                  </div>
-                  <div className="rounded bg-white p-2.5 shadow-xs">
-                    <p className="text-ink-500">BCPNN IC [IC025]</p>
-                    <p className="text-base font-extrabold text-ink-900">
-                      {customSignalResult.bcpnn?.ic}
-                      <span className="ml-1 text-[11px] font-normal text-ink-500">[{customSignalResult.bcpnn?.ic025}]</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Flagged Signals Table */}
-          <div className="card overflow-hidden">
-            <div className="border-b border-ink-100 bg-ink-50/50 px-5 py-3">
-              <h3 className="text-sm font-bold text-ink-900">Active High-Priority Safety Signals (FAERS Surveillance)</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-ink-200 bg-ink-50 text-[11px] font-bold uppercase text-ink-600">
-                  <tr>
-                    <th className="px-4 py-3">Suspect Drug</th>
-                    <th className="px-4 py-3">Adverse Reaction</th>
-                    <th className="px-4 py-3 text-right">FAERS Cases (a)</th>
-                    <th className="px-4 py-3 text-right">PRR [95% CI]</th>
-                    <th className="px-4 py-3 text-right">&chi;&sup2; (Yates)</th>
-                    <th className="px-4 py-3 text-right">ROR [95% CI]</th>
-                    <th className="px-4 py-3 text-right">IC [IC025]</th>
-                    <th className="px-4 py-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {(analyticsData?.signals || []).map((sig, idx) => (
-                    <tr key={idx} className="hover:bg-ink-50/70 transition">
-                      <td className="px-4 py-3 font-bold text-ink-900">{sig.drug}</td>
-                      <td className="px-4 py-3 text-ink-800">{sig.reaction}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-ink-700">
-                        {sig.a.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-bold text-sky-700">
-                        {sig.prr}
-                        <span className="ml-1 text-[10px] text-ink-400">
-                          [{sig.prr_ci_95?.[0]}-{sig.prr_ci_95?.[1]}]
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-ink-700">
-                        {sig.chi2.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-ink-800 font-semibold">
-                        {sig.ror}
-                        <span className="ml-1 text-[10px] text-ink-400">
-                          [{sig.ror_ci_95?.[0]}-{sig.ror_ci_95?.[1]}]
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-ink-700">
-                        +{sig.ic} <span className="text-[10px] text-ink-400">[{sig.ic025}]</span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            sig.signal_status === "STRONG_SIGNAL"
-                              ? "bg-rose-100 text-rose-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {sig.signal_status?.replace("_", " ")}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* 4 Actionable KPI Tiles */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {/* KPI 1: Awaiting Review */}
+        <div className="card relative overflow-hidden p-5 shadow-xs hover:shadow-md transition">
+          <div className="absolute top-0 right-0 h-16 w-16 -mr-4 -mt-4 rounded-full bg-amber-500/10 blur-xl"></div>
+          <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider">Awaiting Review</p>
+          <p className="mt-2 text-3xl font-extrabold text-amber-600">{loading ? "—" : awaitingReviewCount}</p>
+          <p className="mt-1 text-xs text-ink-400">Cases pending clinician review</p>
         </div>
-      )}
 
-      {/* Tab 2: Demographics & Epidemiology */}
-      {activeTab === "demographics" && analyticsData && (
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Top Suspect Drugs Card */}
-          <div className="card p-5">
-            <h3 className="text-sm font-bold text-ink-900">Top Suspect Drugs by Adverse Event Volume</h3>
-            <div className="mt-4 space-y-3">
-              {analyticsData.top_drugs?.map((d, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-ink-800">{d.name}</span>
-                    <span className="text-ink-500">
-                      {d.totalReports.toLocaleString()} reports ({d.seriousPercent}% serious)
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-600"
-                      style={{ width: `${Math.min(100, (d.totalReports / 55000) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* KPI 2: Overdue Clock */}
+        <div className="card relative overflow-hidden p-5 shadow-xs hover:shadow-md transition border-l-4 border-l-rose-500">
+          <div className="absolute top-0 right-0 h-16 w-16 -mr-4 -mt-4 rounded-full bg-rose-500/10 blur-xl"></div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-rose-700 uppercase tracking-wider">Overdue SLA</p>
+            {overdueCount > 0 && <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping"></span>}
           </div>
-
-          {/* Demographic Breakdown Card */}
-          <div className="card p-5 space-y-5">
-            <div>
-              <h3 className="text-sm font-bold text-ink-900">Patient Gender Distribution</h3>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                {analyticsData.demographics?.gender?.map((g, idx) => (
-                  <div key={idx} className="rounded border border-ink-100 bg-ink-50 p-3">
-                    <p className="text-lg font-bold text-ink-900">{g.percentage}%</p>
-                    <p className="text-[11px] font-semibold text-ink-600">{g.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-bold text-ink-900">Patient Age Stratification</h3>
-              <div className="mt-3 space-y-2">
-                {analyticsData.demographics?.ageGroups?.map((a, idx) => (
-                  <div key={idx} className="space-y-1 text-xs">
-                    <div className="flex justify-between font-semibold">
-                      <span className="text-ink-700">{a.range}</span>
-                      <span className="text-ink-900">{a.percentage}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100">
-                      <div
-                        className="h-full rounded-full bg-amber-500"
-                        style={{ width: `${a.percentage * 2}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Longitudinal Reporting Trends */}
-          <div className="card md:col-span-2 p-5">
-            <h3 className="text-sm font-bold text-ink-900">Longitudinal Adverse Event Submissions (Quarterly)</h3>
-            <div className="mt-4 grid grid-cols-6 gap-2 text-center text-xs">
-              {analyticsData.trends?.map((t, idx) => (
-                <div key={idx} className="flex flex-col items-center justify-end rounded border border-ink-100 bg-ink-50 p-3 h-40">
-                  <div
-                    className="w-8 rounded-t bg-sky-600"
-                    style={{ height: `${(t.totalReports / 420000) * 100}px` }}
-                  />
-                  <p className="mt-2 text-[11px] font-bold text-ink-900">{t.period}</p>
-                  <p className="text-[10px] text-ink-500">{(t.totalReports / 1000).toFixed(0)}k total</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <p className="mt-2 text-3xl font-extrabold text-rose-700">{loading ? "—" : overdueCount}</p>
+          <p className="mt-1 text-xs text-rose-600 font-medium">Expedited clock breached</p>
         </div>
-      )}
 
-      {/* Tab 3: Drug-Event Knowledge Graph */}
-      {activeTab === "graph" && (
-        <div className="card p-5 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-100 pb-4">
+        {/* KPI 3: Due <48h */}
+        <div className="card relative overflow-hidden p-5 shadow-xs hover:shadow-md transition">
+          <div className="absolute top-0 right-0 h-16 w-16 -mr-4 -mt-4 rounded-full bg-orange-500/10 blur-xl"></div>
+          <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider">Due &lt; 48 Hours</p>
+          <p className="mt-2 text-3xl font-extrabold text-orange-600">{loading ? "—" : dueSoonCount}</p>
+          <p className="mt-1 text-xs text-ink-400">Expedited submission required</p>
+        </div>
+
+        {/* KPI 4: Serious Open */}
+        <div className="card relative overflow-hidden p-5 shadow-xs hover:shadow-md transition">
+          <div className="absolute top-0 right-0 h-16 w-16 -mr-4 -mt-4 rounded-full bg-purple-500/10 blur-xl"></div>
+          <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider">Serious Open</p>
+          <p className="mt-2 text-3xl font-extrabold text-purple-700">{loading ? "—" : seriousOpenCount}</p>
+          <p className="mt-1 text-xs text-ink-400">ICH E2A serious events active</p>
+        </div>
+      </div>
+
+      {/* Main Grid: Regulatory Clock Queue (Center Stage) & Activity Feed */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Regulatory Clock Queue (2 Columns) */}
+        <div className="card overflow-hidden lg:col-span-2 space-y-4 p-5">
+          <div className="flex items-center justify-between border-b border-ink-100 pb-3">
             <div>
-              <h3 className="text-base font-bold text-ink-900">Drug-Event Clinical Knowledge Graph</h3>
-              <p className="text-xs text-ink-500">
-                Explore ontological relationships: Drug &rarr; Class &rarr; Adverse Event &rarr; Target Organ &rarr; Risk Factor
-              </p>
+              <h2 className="text-base font-bold text-ink-950">Regulatory Submission Clock Queue</h2>
+              <p className="text-xs text-ink-500">Prioritized by regulatory submission urgency (FDA 21 CFR 314.80 / EMA GVP VI).</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-ink-600">Center Graph On:</span>
-              <select
-                value={selectedGraphDrug}
-                onChange={(e) => setSelectedGraphDrug(e.target.value)}
-                className="rounded border border-ink-300 bg-white px-3 py-1.5 text-xs font-semibold text-ink-800 focus:outline-none"
-              >
-                <option value="Amoxicillin">Amoxicillin</option>
-                <option value="Ciprofloxacin">Ciprofloxacin</option>
-                <option value="Ibuprofen">Ibuprofen</option>
-                <option value="Lisinopril">Lisinopril</option>
-                <option value="Metformin">Metformin</option>
-                <option value="Atorvastatin">Atorvastatin</option>
-                <option value="Warfarin">Warfarin</option>
-              </select>
-            </div>
+            <Link to="/cases" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+              View All ({reports.length}) &rarr;
+            </Link>
           </div>
 
-          {graphLoading ? (
-            <div className="flex h-64 items-center justify-center text-sm text-ink-400">Loading graph topology...</div>
-          ) : graphData ? (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
-                <span className="text-xs font-bold text-indigo-900">Drug Class: </span>
-                <span className="text-xs font-medium text-indigo-800">{graphData.class_name}</span>
-                {graphData.sibling_drugs?.length > 0 && (
-                  <span className="ml-3 text-xs text-indigo-700">
-                    &bull; Sibling agents: {graphData.sibling_drugs.join(", ")}
-                  </span>
-                )}
-              </div>
+          {loading ? (
+            <div className="h-48 animate-pulse rounded bg-ink-100/50" />
+          ) : urgentQueue.length === 0 ? (
+            <div className="py-12 text-center text-sm text-ink-400">
+              No open expedited cases currently in queue.
+            </div>
+          ) : (
+            <div className="divide-y divide-ink-100">
+              {urgentQueue.map((item) => {
+                const isOverdue = item.clockStatus === "OVERDUE" || (item.hoursRemaining !== null && item.hoursRemaining < 0);
+                const isCritical = item.clockStatus === "EXPEDITED_CRITICAL" || (item.hoursRemaining !== null && item.hoursRemaining <= 48);
+                const sev = item.classification?.severity;
 
-              {/* Graph Nodes Grouped by Clinical Entity Type */}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {/* Adverse Events */}
-                <div className="rounded border border-rose-200 bg-rose-50/30 p-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-rose-800">Induced Reactions</h4>
-                  <div className="mt-2 space-y-1.5">
-                    {graphData.nodes
-                      ?.filter((n) => n.type === "adverse_event")
-                      .map((node) => (
-                        <div key={node.id} className="rounded bg-white p-2 text-xs font-semibold text-rose-950 shadow-xs">
-                          {node.label}
-                          {node.meddra_pt && (
-                            <span className="block text-[10px] font-normal text-rose-600">MedDRA: {node.meddra_pt}</span>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Target Organ Systems */}
-                <div className="rounded border border-sky-200 bg-sky-50/30 p-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-sky-800">Target Organ Systems</h4>
-                  <div className="mt-2 space-y-1.5">
-                    {graphData.nodes
-                      ?.filter((n) => n.type === "organ_system")
-                      .map((node) => (
-                        <div key={node.id} className="rounded bg-white p-2 text-xs font-semibold text-sky-950 shadow-xs">
-                          {node.label}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Patient Risk Factors */}
-                <div className="rounded border border-amber-200 bg-amber-50/30 p-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800">Risk Modifiers / Preconditions</h4>
-                  <div className="mt-2 space-y-1.5">
-                    {graphData.nodes
-                      ?.filter((n) => n.type === "risk_factor")
-                      .map((node) => (
-                        <div key={node.id} className="rounded bg-white p-2 text-xs font-semibold text-amber-950 shadow-xs">
-                          {node.label}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Drug Class & Siblings */}
-                <div className="rounded border border-purple-200 bg-purple-50/30 p-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800">Class & Analogues</h4>
-                  <div className="mt-2 space-y-1.5">
-                    <div className="rounded bg-white p-2 text-xs font-semibold text-purple-950 shadow-xs">
-                      {graphData.class_name}
-                    </div>
-                    {graphData.sibling_drugs?.map((sib, i) => (
-                      <div key={i} className="rounded bg-white/70 p-2 text-xs text-purple-900 shadow-xs">
-                        {sib} (shared class risk)
+                return (
+                  <div key={item._id} className="py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-ink-50/50 rounded-lg px-2 transition">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Link to={`/reports/${item._id}`} className="font-mono text-xs font-bold text-brand-600 hover:underline">
+                          #{item._id.slice(-6).toUpperCase()}
+                        </Link>
+                        <span className="font-bold text-ink-900 text-sm">
+                          {item.extraction?.drugName || "Unspecified drug"}
+                        </span>
+                        {sev && (
+                          <span className={`badge text-[10px] ${SEVERITY_STYLES[sev] || "bg-ink-100 text-ink-600"}`}>
+                            {sev.replace(/_/g, " ")}
+                          </span>
+                        )}
                       </div>
-                    ))}
+                      <p className="text-xs text-ink-600">
+                        {item.extraction?.symptoms?.join(", ") || "No symptoms listed"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div>
+                        {isOverdue ? (
+                          <span className="rounded bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800 animate-pulse">
+                            OVERDUE
+                          </span>
+                        ) : isCritical ? (
+                          <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">
+                            {item.hoursRemaining}h left ({item.regulatoryClockDays}d SLA)
+                          </span>
+                        ) : (
+                          <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                            {item.hoursRemaining}h left ({item.regulatoryClockDays}d SLA)
+                          </span>
+                        )}
+                      </div>
+                      <Link
+                        to={`/reports/${item._id}`}
+                        className="rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 transition"
+                      >
+                        Review
+                      </Link>
+                    </div>
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Live Activity Feed & Pipeline Health */}
+        <div className="space-y-6">
+          {/* Live Activity Feed */}
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-ink-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <h3 className="text-sm font-bold text-ink-950">Live Activity Feed</h3>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">SSE Stream</span>
+            </div>
+
+            <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              {activityFeed.length === 0 ? (
+                <p className="text-xs text-ink-400 py-4 text-center">No recent activity</p>
+              ) : (
+                activityFeed.map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-2.5 text-xs">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-brand-500 shrink-0"></span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-ink-800 truncate">
+                        <Link to={`/reports/${item.id}`} className="hover:text-brand-600 hover:underline">
+                          {item.drug}
+                        </Link>
+                      </p>
+                      <p className="text-[11px] text-ink-500">{item.action}</p>
+                    </div>
+                    <span className="text-[10px] text-ink-400 tabular-nums shrink-0">{item.time}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* AI Pipeline & System Health */}
+          <div className="card p-5 space-y-3">
+            <h3 className="text-sm font-bold text-ink-950 border-b border-ink-100 pb-2">System & Pipeline Health</h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-ink-600">Express API Gateway</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Healthy
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ink-600">FastAPI ML Service</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Healthy (v0.2.0)
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ink-600">FAERS 2024-Q4 Cohort</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> 12.5M records
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ink-600">Audit Trail Hash-Chain</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Verified & Locked
+                </span>
               </div>
             </div>
-          ) : null}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -88,6 +88,10 @@ export async function getPipelineStatus(req, res) {
   const report = await Report.findById(req.params.id);
   if (!report) return res.status(404).json({ error: "Report not found" });
 
+  if (req.user.role === "doctor" && report.submittedBy?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ error: "Access denied: Doctors may only view status of reports they submitted" });
+  }
+
   const job = req.query.jobId ? getJobStatus(req.query.jobId) : null;
   res.json({
     reportId: report._id,
@@ -223,7 +227,11 @@ export async function reviewReport(req, res) {
   if (action === "edit" && editedFields && typeof editedFields === "object") {
     const latestExtraction = await Extraction.findOne({ report: report._id }).sort({ createdAt: -1 });
     const latestClassification = await Classification.findOne({ report: report._id }).sort({ createdAt: -1 });
-    const fieldDiffs = [];
+    const originalAiExtraction = latestExtraction
+      ? (latestExtraction.toObject ? latestExtraction.toObject() : { ...latestExtraction })
+      : null;
+    const originalAiSeverity = latestClassification?.severity;
+    const originalAiConfidence = latestClassification?.confidence;
 
     if (latestExtraction) {
       if (editedFields.drugName !== undefined && editedFields.drugName !== latestExtraction.drugName) {
@@ -268,9 +276,9 @@ export async function reviewReport(req, res) {
         reviewer: req.user._id,
         rawText: report.rawText,
         deidentifiedText: report.deidentifiedText,
-        aiExtraction: latestExtraction?.toObject ? latestExtraction.toObject() : latestExtraction,
-        aiSeverity: latestClassification?.severity,
-        aiConfidence: latestClassification?.confidence,
+        aiExtraction: originalAiExtraction,
+        aiSeverity: originalAiSeverity,
+        aiConfidence: originalAiConfidence,
         humanCorrections: editedFields,
         fieldDiffs,
       });
@@ -309,11 +317,20 @@ export async function reviewReport(req, res) {
 
 // Phase 2D — Export labeled evaluation dataset generated from human reviewer corrections
 export async function exportFeedbackDataset(req, res) {
-  const examples = await FeedbackExample.find()
+  const allExamples = await FeedbackExample.find()
     .populate("reviewer", "name role")
     .sort({ createdAt: -1 })
     .limit(1000)
     .lean();
+
+  // Export only examples where actual field diffs exist
+  const examples = allExamples.filter((ex) => Array.isArray(ex.fieldDiffs) && ex.fieldDiffs.length > 0);
+
+  await logAction({
+    actor: req.user?._id,
+    action: "dataset.export_feedback",
+    details: { totalReturned: examples.length },
+  });
 
   res.json({
     total: examples.length,
@@ -322,17 +339,51 @@ export async function exportFeedbackDataset(req, res) {
   });
 }
 
+// Helper to escape XML special characters
+export function escapeXml(unsafe) {
+  if (unsafe === null || unsafe === undefined) return "";
+  return String(unsafe).replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case "&": return "&amp;";
+      case "'": return "&apos;";
+      case '"': return "&quot;";
+      default: return c;
+    }
+  });
+}
+
 // Helper to construct E2B(R3) ICSR XML
 export function buildReportE2BXml(report, extraction, classification) {
   const messageDate = new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14);
   const reportId = `PHARMAGUARD-${report._id.toString().toUpperCase()}`;
-  const drugName = extraction?.drugName || "UNKNOWN_DRUG";
-  const rxcui = report.terminology?.drugRxNorm?.rxcui || "UNKNOWN";
+  const drugName = escapeXml(extraction?.drugName || "UNKNOWN_DRUG");
+  const rxcui = escapeXml(report.terminology?.drugRxNorm?.rxcui || "UNKNOWN");
   const symptoms = extraction?.symptoms || [];
-  const primaryReaction = symptoms[0] || "Adverse Event";
-  const meddraPt = report.terminology?.meddraAdverseEvents?.[0]?.pt || primaryReaction;
-  const meddraSoc = report.terminology?.meddraAdverseEvents?.[0]?.soc || "General disorders";
+  const primaryReaction = escapeXml(symptoms[0] || "Adverse Event");
+  const meddraPt = escapeXml(report.terminology?.meddraAdverseEvents?.[0]?.pt || primaryReaction);
+  const meddraSoc = escapeXml(report.terminology?.meddraAdverseEvents?.[0]?.soc || "General disorders");
   const seriousnessCode = report.isSerious ? "1" : "2";
+
+  // Dynamic reaction outcome mapping (ICH E2B: 1=recovered, 2=recovering, 3=not recovered, 4=recovered with sequelae, 5=fatal, 6=unknown)
+  let reactionOutcome = "6";
+  if (report.ichE2ACriteria?.includes("death")) {
+    reactionOutcome = "5";
+  } else if (report.ichE2ACriteria?.includes("disability") || report.ichE2ACriteria?.includes("life_threatening")) {
+    reactionOutcome = "3";
+  } else if (report.status === "approved" && !report.isSerious) {
+    reactionOutcome = "1";
+  }
+
+  const reporterName = escapeXml(report.submittedBy?.name || "Healthcare Provider");
+  const comorbidities = escapeXml((extraction?.comorbidities || []).join(", ") || "None recorded");
+  const dosage = escapeXml(extraction?.dosage || "UNSPECIFIED");
+  const route = escapeXml(extraction?.route || "Oral");
+  const naranjoScore = escapeXml(report.causality?.naranjoScore || "0");
+  const whoUmc = escapeXml(report.causality?.whoUmcCategory || "Possible");
+  const narrativeSummary = escapeXml(report.summary || "No narrative generated.");
+  const reporterComment = escapeXml(report.causality?.rationale || "");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ichicsr lang="en">
@@ -354,6 +405,7 @@ export function buildReportE2BXml(report, extraction, classification) {
     <transmissiondate>${messageDate.slice(0, 8)}</transmissiondate>
     <reporttype>1</reporttype>
     <serious>${seriousnessCode}</serious>
+    <seriousness>${seriousnessCode}</seriousness>
     <seriousnessdeath>${report.ichE2ACriteria?.includes("death") ? "1" : "2"}</seriousnessdeath>
     <seriousnesslifethreatening>${report.ichE2ACriteria?.includes("life_threatening") ? "1" : "2"}</seriousnesslifethreatening>
     <seriousnesshospitalization>${report.ichE2ACriteria?.includes("hospitalization") ? "1" : "2"}</seriousnesshospitalization>
@@ -362,35 +414,35 @@ export function buildReportE2BXml(report, extraction, classification) {
     <seriousnessother>${report.ichE2ACriteria?.includes("medically_significant") ? "1" : "2"}</seriousnessother>
     <primarysource>
       <reporterqualification>1</reporterqualification>
-      <reportergivename>${report.submittedBy?.name || "Healthcare Provider"}</reportergivename>
+      <reportergivename>${reporterName}</reportergivename>
     </primarysource>
     <patient>
       <patientinitial>ANON</patientinitial>
       <patientonsetage>${extraction?.age || "UNK"}</patientonsetage>
       <patientsex>${extraction?.gender?.toLowerCase() === "female" ? "2" : extraction?.gender?.toLowerCase() === "male" ? "1" : "0"}</patientsex>
-      <medicalhistorytext>${(extraction?.comorbidities || []).join(", ") || "None recorded"}</medicalhistorytext>
+      <medicalhistorytext>${comorbidities}</medicalhistorytext>
       <reaction>
         <primarysourcereaction>${primaryReaction}</primarysourcereaction>
         <reactionmeddraversionpt>26.1</reactionmeddraversionpt>
         <reactionmeddrapt>${meddraPt}</reactionmeddrapt>
         <reactionsoc>${meddraSoc}</reactionsoc>
-        <reactionoutcome>1</reactionoutcome>
+        <reactionoutcome>${reactionOutcome}</reactionoutcome>
       </reaction>
       <drug>
         <drugcharacterization>1</drugcharacterization>
         <medicinalproduct>${drugName}</medicinalproduct>
-        <drugstructuredosagenumb>${extraction?.dosage || "UNSPECIFIED"}</drugstructuredosagenumb>
-        <drugadministrationroute>${extraction?.route || "Oral"}</drugadministrationroute>
+        <drugstructuredosagenumb>${dosage}</drugstructuredosagenumb>
+        <drugadministrationroute>${route}</drugadministrationroute>
         <drugrxnormcui>${rxcui}</drugrxnormcui>
         <drugassessment>
-          <drugcausalitynaranjoscore>${report.causality?.naranjoScore || "0"}</drugcausalitynaranjoscore>
-          <drugcausalitywhoumc>${report.causality?.whoUmcCategory || "Possible"}</drugcausalitywhoumc>
+          <drugcausalitynaranjoscore>${naranjoScore}</drugcausalitynaranjoscore>
+          <drugcausalitywhoumc>${whoUmc}</drugcausalitywhoumc>
         </drugassessment>
       </drug>
     </patient>
     <summary>
-      <narrativeincludeclinical>${report.summary || "No narrative generated."}</narrativeincludeclinical>
-      <reportercomment>${report.causality?.rationale || ""}</reportercomment>
+      <narrativeincludeclinical>${narrativeSummary}</narrativeincludeclinical>
+      <reportercomment>${reporterComment}</reportercomment>
     </summary>
   </safetyreport>
 </ichicsr>`;
@@ -410,7 +462,7 @@ export async function exportReportE2BXml(req, res) {
   const xml = buildReportE2BXml(report, extraction, classification);
 
   res.setHeader("Content-Type", "application/xml");
-  res.setHeader("Content-Disposition", `attachment; filename="${reportId}.xml"`);
+  res.setHeader("Content-Disposition", `attachment; filename="ICH-ICSR-R3-${reportId}.xml"`);
   res.send(xml);
 }
 
@@ -503,6 +555,35 @@ export async function transmitReportToGateway(req, res) {
   const report = await Report.findById(req.params.id).populate("submittedBy", "name email role");
   if (!report) return res.status(404).json({ error: "Report not found" });
 
+  if (!["pharmacist", "admin"].includes(req.user.role)) {
+    return res.status(403).json({ error: "Unauthorized: Only pharmacists and administrators may transmit regulatory reports." });
+  }
+
+  if (report.status !== "approved") {
+    await logAction({
+      actor: req.user._id,
+      action: "report.gateway_transmit_rejected",
+      report: report._id,
+      details: { reason: "Report not approved", status: report.status },
+    });
+    return res.status(409).json({
+      error: `Cannot transmit report to regulatory gateway: Report status is '${report.status}', but must be 'approved'.`,
+      status: report.status,
+    });
+  }
+
+  if (!report.causality?.pharmacistConfirmed) {
+    await logAction({
+      actor: req.user._id,
+      action: "report.gateway_transmit_rejected",
+      report: report._id,
+      details: { reason: "Causality assessment unconfirmed" },
+    });
+    return res.status(409).json({
+      error: "Cannot transmit report to regulatory gateway: Causality assessment has not been confirmed by a clinical reviewer.",
+    });
+  }
+
   const [extraction, classification] = await Promise.all([
     Extraction.findOne({ report: report._id }).sort({ createdAt: -1 }),
     Classification.findOne({ report: report._id }).sort({ createdAt: -1 }),
@@ -585,11 +666,14 @@ export async function getSlaQueueSummary(req, res) {
   return res.json({ ok: true, metrics });
 }
 
-// Stream real-time regulatory SLA countdowns and critical alerts via Server-Sent Events (SSE)
 export async function streamSlaAlerts(req, res) {
-  const activeReports = await Report.find({
+  const filter = {
     status: { $in: ["submitted", "processing", "pending_review", "needs_more_info"] },
-  }).lean();
+  };
+  if (req.user?.role === "doctor") {
+    filter.submittedBy = req.user._id;
+  }
+  const activeReports = await Report.find(filter).lean();
   realtimeEventManager.registerClient(req, res, activeReports);
 }
 

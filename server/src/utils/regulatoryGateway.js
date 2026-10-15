@@ -97,8 +97,9 @@ export function validateE2BXmlPrerequisites(xml) {
   if (!xml.includes("<reactionmeddrapt>")) {
     errors.push("Missing MedDRA Preferred Term for primary adverse reaction (<reactionmeddrapt>).");
   }
-  if (!xml.includes("<seriousness>")) {
-    errors.push("Missing Serious Case classification tag (<seriousness>).");
+  // Accepts either <seriousness> or <serious>
+  if (!xml.includes("<seriousness>") && !xml.includes("<serious>")) {
+    errors.push("Missing Serious Case classification tag (<seriousness> or <serious>).");
   }
 
   return {
@@ -109,35 +110,54 @@ export function validateE2BXmlPrerequisites(xml) {
 
 /**
  * Transmits an AS2 envelope to the regulatory gateway test endpoint and generates an MDN.
+ * Includes configurable simulation modes (acknowledged, rejected, timeout) with simulated: true.
  *
  * @param {string} xmlContent - The E2B(R3) XML string
  * @param {string} reportId - The report ID
- * @param {Object} options - Gateway options
+ * @param {Object} options - Gateway options (e.g. simulationMode: 'ack' | 'reject' | 'timeout')
  * @returns {Object} Regulatory gateway receipt and MDN
  */
 export function transmitToRegulatoryGateway(xmlContent, reportId, options = {}) {
   const validation = validateE2BXmlPrerequisites(xmlContent);
   const envelope = packageAs2Envelope(xmlContent, reportId, options);
+  const mode = options.simulationMode || options.simulateMode || "ack";
 
-  if (!validation.valid) {
+  // 1. Validation failure
+  if (!validation.valid || mode === "reject") {
+    const combinedErrors = validation.valid ? ["Simulated gateway schema validation rejection: Invalid reaction mapping"] : validation.errors;
     const errorMdn = {
       status: "rejected",
       gateway: envelope.gateway,
       as2MessageId: envelope.messageId,
       receivedMic: envelope.mic,
       disposition: "automatic-action/MDN-sent-automatically; failed/failure: schema-validation-error",
-      errors: validation.errors,
+      errors: combinedErrors,
       acknowledgmentTimestamp: new Date().toISOString(),
-      rawMdnText: `FDA Electronic Submission Gateway MDN\r\nStatus: REJECTED\r\nErrors: ${validation.errors.join("; ")}`,
+      rawMdnText: `FDA Electronic Submission Gateway MDN\r\nStatus: REJECTED\r\nErrors: ${combinedErrors.join("; ")}`,
     };
     return {
       success: false,
+      simulated: true,
       transmissionId: `TXN-ERR-${Date.now()}`,
+      status: "rejected",
+      errors: combinedErrors,
       mdn: errorMdn,
     };
   }
 
-  // Generate Positive MDN (Message Disposition Notification)
+  // 2. Simulated timeout
+  if (mode === "timeout") {
+    return {
+      success: false,
+      simulated: true,
+      status: "timeout",
+      transmissionId: `TXN-TIMEOUT-${Date.now()}`,
+      error: "AS2 Gateway Connection Timeout: Remote host did not return MDN within 30000ms",
+      mdn: null,
+    };
+  }
+
+  // 3. Positive MDN (Message Disposition Notification)
   const transmissionId = `TXN-${envelope.gateway}-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
   const mdn = {
     status: "acknowledged",
@@ -151,7 +171,7 @@ export function transmitToRegulatoryGateway(xmlContent, reportId, options = {}) 
     acknowledgmentTimestamp: new Date().toISOString(),
     fdaCoreId: `CORE-${Date.now()}-ESG`,
     rawMdnText: [
-      `Reporting-UA: ${envelope.receiverId} Gateway Engine 4.2`,
+      `Reporting-UA: ${envelope.receiverId} Gateway Engine 4.2 (Simulated)`,
       `Original-Recipient: rfc822; ${envelope.receiverId}`,
       `Final-Recipient: rfc822; ${envelope.senderId}`,
       `Original-Message-ID: ${envelope.messageId}`,
@@ -162,7 +182,9 @@ export function transmitToRegulatoryGateway(xmlContent, reportId, options = {}) 
 
   return {
     success: true,
+    simulated: true,
     transmissionId,
+    status: "acknowledged",
     gateway: envelope.gateway,
     as2MessageId: envelope.messageId,
     mdn,

@@ -113,34 +113,55 @@ def evaluate_ich_e2a_criteria(symptoms: list, raw_text: str = "") -> tuple:
     return criteria, is_serious, regulatory_clock_days
 
 
-def classify(extraction: dict) -> dict:
+def classify(extraction: dict, text: str = "") -> dict:
     symptoms = extraction.get("symptoms") or []
     symptoms_text = " ".join(symptoms)
+    raw_lower = (text or "").lower()
     
+    # 1. Evaluate ICH E2A criteria first over both extracted symptoms and narrative text
+    ich_criteria, is_serious, clock_days = evaluate_ich_e2a_criteria(symptoms, text)
+
     severity = None
     confidence = None
-    model_name = "rule_based_baseline"
+    model_name = "clinical_safety_rules"
     model_version = "0.2.0"
+    model_type = "clinical_safety_rules"
 
     symptoms_set = set(s.lower() for s in symptoms)
-    has_life_threatening_term = any(term in symptoms_set for term in LIFE_THREATENING_TERMS) or any(term in symptoms_text.lower() for term in LIFE_THREATENING_TERMS)
+    has_life_threatening_term = (
+        any(term in symptoms_set for term in LIFE_THREATENING_TERMS) or 
+        any(term in symptoms_text.lower() for term in LIFE_THREATENING_TERMS) or
+        "death" in ich_criteria or
+        "life_threatening" in ich_criteria
+    )
 
-    if clf_pipeline and symptoms and not has_life_threatening_term:
+    # If Random Forest model is available and not a serious/life-threatening safety override, test experimental classifier
+    if clf_pipeline and symptoms and not has_life_threatening_term and not is_serious:
         try:
             probas = clf_pipeline.predict_proba([symptoms_text])[0]
             max_idx = np.argmax(probas)
             severity = clf_pipeline.classes_[max_idx]
             confidence = round(float(probas[max_idx]), 2)
             model_name = "rf_tfidf_classifier"
+            model_type = "experimental"
         except Exception as e:
             print(f"ML classification failed: {e}. Falling back to rules.")
 
-    if severity is None or has_life_threatening_term:
-        # Rule-based fallback or clinical safety override
+    # Clinical safety rules override / fallback
+    if severity is None or has_life_threatening_term or is_serious:
         if has_life_threatening_term:
-            severity, confidence = "life_threatening", 0.9
-        elif any(term in symptoms_set for term in SERIOUS_TERMS) or any(term in symptoms_text.lower() for term in SERIOUS_TERMS):
-            severity, confidence = "serious", 0.8
+            severity, confidence = "life_threatening", 0.95
+            model_name = "clinical_safety_rules"
+            model_type = "clinical_safety_rules"
+        elif (
+            is_serious or
+            any(term in symptoms_set for term in SERIOUS_TERMS) or 
+            any(term in symptoms_text.lower() for term in SERIOUS_TERMS) or
+            any(k in raw_lower for k in ["hospitalized", "hospital admission", "icu", "permanent", "disability"])
+        ):
+            severity, confidence = "serious", 0.85
+            model_name = "clinical_safety_rules"
+            model_type = "clinical_safety_rules"
         elif any(term in symptoms_set for term in MODERATE_TERMS) or any(term in symptoms_text.lower() for term in MODERATE_TERMS):
             severity, confidence = "moderate", 0.7
         elif symptoms_set:
@@ -148,21 +169,29 @@ def classify(extraction: dict) -> dict:
         else:
             severity, confidence = "mild", 0.4
 
-    ich_criteria, is_serious, clock_days = evaluate_ich_e2a_criteria(symptoms)
+    # Consistency check: if marked serious/life_threatening, ensure is_serious is True and clock is assigned
     if severity in ("serious", "life_threatening") and not is_serious:
         is_serious = True
         if severity == "life_threatening":
-            ich_criteria.append("life_threatening")
+            if "life_threatening" not in ich_criteria:
+                ich_criteria.append("life_threatening")
             clock_days = 7
         else:
-            ich_criteria.append("medically_significant")
+            if "medically_significant" not in ich_criteria:
+                ich_criteria.append("medically_significant")
             clock_days = 15
+    elif is_serious and severity not in ("serious", "life_threatening"):
+        severity = "serious"
+        confidence = max(confidence or 0.0, 0.85)
+        model_name = "clinical_safety_rules"
+        model_type = "clinical_safety_rules"
 
     return {
         "severity": severity,
         "confidence": confidence,
         "model_name": model_name,
         "model_version": model_version,
+        "model_type": model_type,
         "ich_e2a_criteria": ich_criteria,
         "is_serious": is_serious,
         "regulatory_clock_days": clock_days,

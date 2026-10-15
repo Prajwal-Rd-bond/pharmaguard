@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+process.env.JWT_SECRET = "pharmaguard-test-jwt-secret-minimum-32-chars-long-2026";
+
 import {
   getSmartConfiguration,
   registerLaunchSession,

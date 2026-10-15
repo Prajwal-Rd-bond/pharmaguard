@@ -11,33 +11,46 @@ import crypto from "crypto";
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard";
 
 export async function seedDatabase() {
+  if (process.env.NODE_ENV === "production") {
+    console.log("[seed] NODE_ENV=production detected; skipping database seed.");
+    return;
+  }
+
   console.log(`[seed] Connecting to MongoDB: ${MONGO_URI}`);
   await mongoose.connect(MONGO_URI);
 
-  // 1. Seed or update default users
+  const existingUserCount = await User.countDocuments();
+  if (existingUserCount > 0) {
+    console.log(`[seed] Existing database has ${existingUserCount} users; preserving all existing accounts.`);
+    return;
+  }
+
+  console.log("[seed] Initializing demo users for local development environment...");
+
+  // 1. Seed default users
   const defaultUsers = [
     {
       name: "System Administrator",
       email: "admin@pharmaguard.org",
-      password: "Admin@12345",
+      password: process.env.DEV_ADMIN_PASSWORD || "Admin@12345",
       role: "admin",
     },
     {
       name: "Dr. Sarah Lin (Pharmacovigilance Lead)",
       email: "pharmacist@pharmaguard.org",
-      password: "Pharma@12345",
+      password: process.env.DEV_PHARMACIST_PASSWORD || "Pharma@12345",
       role: "pharmacist",
     },
     {
       name: "Dr. Marcus Vance (Cardiologist)",
       email: "doctor@pharmaguard.org",
-      password: "Doctor@12345",
+      password: process.env.DEV_DOCTOR_PASSWORD || "Doctor@12345",
       role: "doctor",
     },
     {
       name: "Elena Rostova (Safety Epidemiologist)",
       email: "researcher@pharmaguard.org",
-      password: "Research@12345",
+      password: process.env.DEV_RESEARCHER_PASSWORD || "Research@12345",
       role: "researcher",
     },
   ];
@@ -45,27 +58,17 @@ export async function seedDatabase() {
   const userMap = {};
 
   for (const u of defaultUsers) {
-    let existing = await User.findOne({ email: u.email });
     const passwordHash = await bcrypt.hash(u.password, 10);
-    if (!existing) {
-      existing = await User.create({
-        name: u.name,
-        email: u.email,
-        passwordHash,
-        role: u.role,
-        active: true,
-        mfaEnabled: false,
-      });
-      console.log(`[seed] Created user: ${u.email} (${u.role})`);
-    } else {
-      existing.passwordHash = passwordHash;
-      existing.active = true;
-      existing.mfaEnabled = false;
-      existing.role = u.role;
-      await existing.save();
-      console.log(`[seed] Updated user credentials: ${u.email} (${u.role})`);
-    }
-    userMap[u.role] = existing;
+    const created = await User.create({
+      name: u.name,
+      email: u.email,
+      passwordHash,
+      role: u.role,
+      active: true,
+      mfaEnabled: false,
+    });
+    console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
+    userMap[u.role] = created;
   }
 
   // 2. Check if sample reports exist
@@ -240,12 +243,12 @@ export async function seedDatabase() {
   }
 
   console.log("\n=======================================================");
-  console.log("   PharmaGuard Demo User Credentials Ready:");
+  console.log("   PharmaGuard Demo User Accounts Ready (Dev Seed):");
   console.log("   ----------------------------------------------------");
-  console.log("   Admin:       admin@pharmaguard.org       / Admin@12345");
-  console.log("   Pharmacist:  pharmacist@pharmaguard.org  / Pharma@12345");
-  console.log("   Doctor:      doctor@pharmaguard.org      / Doctor@12345");
-  console.log("   Researcher:  researcher@pharmaguard.org  / Research@12345");
+  console.log("   Admin:       admin@pharmaguard.org");
+  console.log("   Pharmacist:  pharmacist@pharmaguard.org");
+  console.log("   Doctor:      doctor@pharmaguard.org");
+  console.log("   Researcher:  researcher@pharmaguard.org");
   console.log("=======================================================\n");
 }
 

@@ -204,59 +204,45 @@ def run_training_pipeline(
     steps_per_epoch = max(1, math.ceil(total_samples / batch_size))
     total_steps = steps_per_epoch * epochs
 
-    # Simulate realistic training loss curve progression
-    initial_loss = 2.45
-    final_loss = 0.62
-    epoch_metrics = []
-    for ep in range(1, epochs + 1):
-        ep_loss = initial_loss - ((initial_loss - final_loss) * (ep / epochs))
-        perplexity = math.exp(min(ep_loss, 4.0))
-        epoch_metrics.append({
-            "epoch": ep,
-            "train_loss": round(ep_loss, 4),
-            "eval_loss": round(ep_loss * 1.08, 4),
-            "perplexity": round(perplexity, 2),
-        })
+    # Check if real training mode requested and supported
+    if dry_run or not os.getenv("ENABLE_REAL_GPU_TRAINING"):
+        print("[QLoRA] DRY RUN: Validated dataset format and PEFT adapter configuration. No model weights trained.")
+        config_path = os.path.join(output_dir, "adapter_config.json")
+        summary_path = os.path.join(output_dir, "run_summary.json")
 
-    # Save PEFT adapter metadata
-    config_path = os.path.join(output_dir, "adapter_config.json")
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(adapter_config, f, indent=2)
+        # Save PEFT adapter metadata for testing
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(adapter_config, f, indent=2)
 
-    summary = {
-        "status": "completed",
-        "dry_run": dry_run,
-        "base_model": model_id,
-        "dataset_samples": total_samples,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "total_steps": total_steps,
-        "learning_rate": learning_rate,
-        "lora_hyperparameters": {
-            "r": lora_r,
-            "alpha": lora_alpha,
-            "dropout": lora_dropout,
-            "target_modules": target_modules,
-        },
-        "parameter_estimation": stats,
-        "final_metrics": epoch_metrics[-1],
-        "training_history": epoch_metrics,
-        "artifacts_saved": [
-            config_path,
-            os.path.join(output_dir, "training_metrics.json"),
-            os.path.join(output_dir, "run_summary.json"),
-        ],
-    }
+        summary = {
+            "status": "dry_run_verified",
+            "model_trained": False,
+            "dry_run": True,
+            "note": "DRY RUN, no model trained. Instruction prompt templates and LoRA hyperparameter configuration validated.",
+            "base_model": model_id,
+            "dataset_samples": total_samples,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "total_steps": total_steps,
+            "learning_rate": learning_rate,
+            "lora_hyperparameters": {
+                "r": lora_r,
+                "alpha": lora_alpha,
+                "dropout": lora_dropout,
+                "target_modules": target_modules,
+            },
+            "parameter_estimation": stats,
+            "artifacts_saved": [
+                config_path,
+                summary_path,
+            ],
+        }
 
-    metrics_path = os.path.join(output_dir, "training_metrics.json")
-    with open(metrics_path, "w", encoding="utf-8") as f:
-        json.dump(epoch_metrics, f, indent=2)
+        summary_path = os.path.join(output_dir, "run_summary.json")
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2)
 
-    summary_path = os.path.join(output_dir, "run_summary.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-
-    return summary
+        return summary
 
 
 def main():

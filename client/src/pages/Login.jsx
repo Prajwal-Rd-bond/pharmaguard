@@ -7,6 +7,8 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaToken, setMfaToken] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,8 +23,12 @@ export default function Login() {
     setError(null);
     setBusy(true);
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      const res = await login(email, password, mfaToken);
+      if (res?.mfaRequired) {
+        setMfaRequired(true);
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {
@@ -93,32 +99,63 @@ export default function Login() {
             <span className="text-lg font-bold text-ink-900">PharmaGuard</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-ink-900">Welcome back</h2>
-          <p className="mt-1 text-sm text-ink-500">Sign in to access the safety intelligence platform.</p>
+          <h2 className="text-2xl font-bold text-ink-900">
+            {mfaRequired ? "Two-Factor Verification" : "Welcome back"}
+          </h2>
+          <p className="mt-1 text-sm text-ink-500">
+            {mfaRequired
+              ? "Enter the 6-digit TOTP code from your authenticator app."
+              : "Sign in to access the safety intelligence platform."}
+          </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-            <div>
-              <label className="field-label">Email</label>
-              <input
-                className="field"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                placeholder="you@hospital.org"
-                required
-              />
-            </div>
-            <div>
-              <label className="field-label">Password</label>
-              <input
-                className="field"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                placeholder="••••••••"
-                required
-              />
-            </div>
+            {!mfaRequired ? (
+              <>
+                <div>
+                  <label className="field-label">Email</label>
+                  <input
+                    className="field"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    type="email"
+                    placeholder="you@hospital.org"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="field-label">Password</label>
+                  <input
+                    className="field"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type="password"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="field-label">6-Digit Passcode</label>
+                <input
+                  className="field text-center font-mono text-lg tracking-widest"
+                  value={mfaToken}
+                  onChange={(e) => setMfaToken(e.target.value)}
+                  type="text"
+                  maxLength={6}
+                  placeholder="000000"
+                  autoFocus
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setMfaRequired(false)}
+                  className="mt-2 text-xs text-brand-600 hover:underline"
+                >
+                  &larr; Back to password
+                </button>
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
@@ -127,60 +164,70 @@ export default function Login() {
             )}
 
             <button type="submit" disabled={busy} className="btn-primary mt-2 w-full py-2.5">
-              {busy ? "Signing in…" : "Log in"}
+              {busy ? "Verifying…" : mfaRequired ? "Verify Code & Sign In" : "Log in"}
             </button>
 
-            <div className="mt-6 border-t border-ink-200/80 pt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
-                Quick Demo Access (1-Click Fill)
-              </p>
-              <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("pharmacist@pharmaguard.org");
-                    setPassword("Pharma@12345");
-                  }}
-                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
-                >
-                  <span className="block font-semibold text-brand-600">Pharmacist</span>
-                  <span className="text-[10px] text-ink-500">Full Triage & Review</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("admin@pharmaguard.org");
-                    setPassword("Admin@12345");
-                  }}
-                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
-                >
-                  <span className="block font-semibold text-brand-600">Administrator</span>
-                  <span className="text-[10px] text-ink-500">Full Audit & Users</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("doctor@pharmaguard.org");
-                    setPassword("Doctor@12345");
-                  }}
-                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
-                >
-                  <span className="block font-semibold text-brand-600">Doctor</span>
-                  <span className="text-[10px] text-ink-500">Report Intake</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("researcher@pharmaguard.org");
-                    setPassword("Research@12345");
-                  }}
-                  className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
-                >
-                  <span className="block font-semibold text-brand-600">Researcher</span>
-                  <span className="text-[10px] text-ink-500">Signals & Stats</span>
-                </button>
+            {import.meta.env.DEV && (
+              <div className="mt-6 border-t border-amber-200/80 bg-amber-50/60 p-4 rounded-xl border border-amber-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-amber-900">
+                      Demo Environment
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                    Auto-Fill
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail("pharmacist@pharmaguard.org");
+                      setPassword("Pharma@12345");
+                    }}
+                    className="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                  >
+                    <span className="block font-semibold text-brand-600">Pharmacist</span>
+                    <span className="text-[10px] text-ink-500">Triage & Review</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail("admin@pharmaguard.org");
+                      setPassword("Admin@12345");
+                    }}
+                    className="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                  >
+                    <span className="block font-semibold text-brand-600">Administrator</span>
+                    <span className="text-[10px] text-ink-500">Audit & Users</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail("doctor@pharmaguard.org");
+                      setPassword("Doctor@12345");
+                    }}
+                    className="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                  >
+                    <span className="block font-semibold text-brand-600">Doctor</span>
+                    <span className="text-[10px] text-ink-500">Report Intake</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail("researcher@pharmaguard.org");
+                      setPassword("Research@12345");
+                    }}
+                    className="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-left font-medium text-ink-700 shadow-sm transition hover:bg-brand-50 hover:border-brand-300 hover:text-brand-900 focus:outline-none"
+                  >
+                    <span className="block font-semibold text-brand-600">Researcher</span>
+                    <span className="text-[10px] text-ink-500">Signals & Stats</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </form>
         </div>
       </div>

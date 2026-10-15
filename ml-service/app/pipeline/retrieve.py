@@ -108,6 +108,16 @@ KNOWLEDGE_CORPUS = [
     },
 ]
 
+try:
+    from .corpus_seed import SEED_DOCS
+    existing_ids = {d["source_id"] for d in KNOWLEDGE_CORPUS}
+    for seed_doc in SEED_DOCS:
+        if seed_doc["source_id"] not in existing_ids:
+            KNOWLEDGE_CORPUS.append(seed_doc)
+            existing_ids.add(seed_doc["source_id"])
+except Exception as e:
+    print(f"Warning: Failed to import corpus_seed: {e}")
+
 # Initialize embedding model (SentenceTransformer)
 embedding_model = None
 if SentenceTransformer is not None:

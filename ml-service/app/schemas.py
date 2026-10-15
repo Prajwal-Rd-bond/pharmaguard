@@ -49,13 +49,17 @@ class ExtractionResult(BaseModel):
     incomplete: bool = False
     modelVersion: str = "extraction-stub-0.1"
     promptVersion: str = "v1"
+    extractionMode: Optional[str] = "regex_baseline"
+    model_config = {"protected_namespaces": ()}
 
 
 class ClassificationResult(BaseModel):
+    model_config = {"protected_namespaces": ()}
     severity: str  # mild | moderate | serious | life_threatening
     confidence: float
     model_name: str
     model_version: str
+    model_type: Optional[str] = "clinical_safety_rules"  # clinical_safety_rules | experimental
     ich_e2a_criteria: List[str] = []  # death, life_threatening, hospitalization, disability, congenital_anomaly, medically_significant
     is_serious: bool = False
     regulatory_clock_days: int = 15  # 7-day fatal/life-threatening, 15-day serious, 90-day non-serious
