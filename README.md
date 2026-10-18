@@ -1,11 +1,22 @@
 # PharmaGuard
 
+AI-assisted drug-safety review prototype with a traceable LLM/RAG pipeline and human approval workflow.
+
+> **Research and portfolio prototype.** Default cases are synthetic. Regulatory gateways are simulated; the application does not submit reports to health authorities. Implemented controls are demonstrations, not evidence of clinical validation or regulatory certification.
+
+## Project at a glance
+
+- **My work:** designed the multi-stage de-identification, extraction, classification, retrieval and summarization pipeline; integrated a React client, Express API and FastAPI ML service.
+- **Engineering focus:** inspectable intermediate outputs, evidence retrieval with Qdrant, human review and auditable case changes.
+- **Explore:** [screenshots](docs/screenshots/) · [architecture](#system-architecture--data-pipeline) · [local setup](#quick-start--local-setup) · [verification commands](#verification--automated-test-suite).
+- **Evaluation boundary:** the documented automated tests cover software behaviour; they do not establish clinical accuracy, de-identification completeness or regulatory readiness.
+
 <div align="center">
 
 ![PharmaGuard Banner](docs/screenshots/02-action-center-dashboard.png)
 
-### **Enterprise Pharmacovigilance & Drug Safety Intelligence Platform**
-*Augmented with Clinical LLMs, FAERS Disproportionality Analytics, and ICH E2B(R3) Regulatory Gateways*
+### **Pharmacovigilance & Drug Safety Research Prototype**
+*Augmented with Clinical LLMs, FAERS Disproportionality Analytics, and Simulated Regulatory Gateways*
 
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://python.org/)
@@ -14,7 +25,7 @@
 [![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-6.0%2B-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![HL7 FHIR](https://img.shields.io/badge/HL7_FHIR-R4-E05A47)](https://hl7.org/fhir/R4/)
-[![ICH E2B(R3)](https://img.shields.io/badge/ICH_E2B-R3_Compliant-006699)](https://www.ich.org/)
+[![ICH E2B(R3)](https://img.shields.io/badge/ICH_E2B-R3_Prototype-006699)](https://www.ich.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
@@ -47,10 +58,10 @@
 
 ## Executive Overview
 
-**PharmaGuard** is a full-stack, enterprise-grade pharmacovigilance (PV) and post-marketing surveillance platform designed to ingest unstructured adverse drug reaction (ADR) narratives, clinical documents, and HL7 FHIR R4 bundles, automatically de-identifying sensitive patient data, extracting clinical entities via Large Language Models (LLMs), evaluating seriousness against ICH E2A criteria, and orchestrating human-in-the-loop review before transmission to regulatory health authorities (FDA ESG AS2 / EMA EudraVigilance Gateway).
+**PharmaGuard** is a full-stack research prototype for pharmacovigilance (PV) and post-marketing surveillance platform designed to ingest unstructured adverse drug reaction (ADR) narratives, clinical documents, and HL7 FHIR R4 bundles, automatically de-identifying sensitive patient data, extracting clinical entities via Large Language Models (LLMs), evaluating seriousness against ICH E2A criteria, and orchestrating human-in-the-loop review before simulated transmission through mock regulatory gateways.
 
 PharmaGuard reconciles clinical speed with strict data integrity:
-- **HIPAA Safe Harbor De-identification:** PHI/PII masking prior to downstream LLM processing.
+- **De-identification Prototype:** PHI/PII masking prior to downstream LLM processing.
 - **Explainable Clinical LLMs:** Fallback pipelines from Gemini Pro to regex baselines with clear provenance.
 - **Quantitative Post-Marketing Surveillance:** Real-time FAERS disproportionality queries computing Evans Criteria (PRR, ROR, $\chi^2$ Yates, and BCPNN Information Component $IC_{025}$).
 - **Immutable Cryptographic Audit Trail:** Forward-linked SHA-256 hash chains across every ingestion, modification, and transmission.
@@ -76,7 +87,7 @@ PharmaGuard reconciles clinical speed with strict data integrity:
 1. **P0 Security Hardening:** Strict minimum 32-character `JWT_SECRET` verification, per-request active DB user status checks, production seed shields, SMART on FHIR token authentication, and doctor row-level ACLs.
 2. **Data Honesty Guarantee:** Complete removal of synthetic statistical tables; unobserved drug-reaction pairs return `status: "INSUFFICIENT_DATA"` with 0 counts; simulation failure modes explicitly identify test transmissions.
 3. **Clinical Safety Rules:** Narratives mentioning life-threatening conditions (e.g., Anaphylaxis, Stevens-Johnson Syndrome, Acute Hepatic Failure) automatically override statistical ML classifiers to enforce ICH E2A serious status.
-4. **E2B(R3) Standards Compliance:** Full XML entity escaping, proper reaction outcome mapping (`fatal=5, disability=3, mild=1, unknown=6`), and formatted `ICH-ICSR-R3-${reportId}.xml` exports.
+4. **E2B(R3)-style Export:** Full XML entity escaping, proper reaction outcome mapping (`fatal=5, disability=3, mild=1, unknown=6`), and formatted `ICH-ICSR-R3-${reportId}.xml` exports.
 
 ---
 
@@ -201,7 +212,7 @@ Topological knowledge graph mapping hierarchical relationships from active ingre
 ---
 
 ### 9. Cryptographic Audit Ledger
-Tamper-evident, forward-linked cryptographic ledger ensuring full compliance with 21 CFR Part 11 and GxP standards.
+Tamper-evident, forward-linked cryptographic ledger demonstrating audit-integrity controls relevant to regulated workflows; compliance is not established by hash chaining alone.
 
 <div align="center">
   <img src="docs/screenshots/09-cryptographic-audit-log.png" alt="Cryptographic Audit Ledger" width="900" />
@@ -357,7 +368,7 @@ npm run dev
 
 ## Verification & Automated Test Suite
 
-PharmaGuard includes comprehensive test coverage spanning P0 security guards, FHIR endpoints, and ML safety pipelines:
+PharmaGuard includes automated tests spanning P0 security guards, FHIR endpoints, and ML safety pipelines:
 
 ### 1. Server Unit & Security Tests (59 Tests)
 ```bash
@@ -425,7 +436,7 @@ pharmaguard/
 │   └── screenshots/            # Hi-res UI screenshots (9 modules)
 ├── scripts/
 │   └── capture_screenshots.js  # Headless Chrome Puppeteer capture automation
-└── README.md                   # Enterprise Documentation
+└── README.md                   # Project Documentation
 ```
 
 ---
