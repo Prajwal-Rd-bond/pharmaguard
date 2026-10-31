@@ -241,14 +241,16 @@ export async function seedDatabase(options = {}) {
     console.log(`[seed] Existing database has ${reportCount} reports; skipping sample reports.`);
   }
 
-  console.log("\n=======================================================");
-  console.log("   PharmaGuard Demo User Credentials Ready:");
-  console.log("   ----------------------------------------------------");
-  console.log("   Admin:       admin@pharmaguard.org       / Admin@12345");
-  console.log("   Pharmacist:  pharmacist@pharmaguard.org  / Pharma@12345");
-  console.log("   Doctor:      doctor@pharmaguard.org      / Doctor@12345");
-  console.log("   Researcher:  researcher@pharmaguard.org  / Research@12345");
-  console.log("=======================================================\n");
+  if (process.env.NODE_ENV === "development") {
+    console.log("\n=======================================================");
+    console.log("   PharmaGuard Demo User Credentials Ready:");
+    console.log("   ----------------------------------------------------");
+    console.log("   Admin:       admin@pharmaguard.org       / Admin@12345");
+    console.log("   Pharmacist:  pharmacist@pharmaguard.org  / Pharma@12345");
+    console.log("   Doctor:      doctor@pharmaguard.org      / Doctor@12345");
+    console.log("   Researcher:  researcher@pharmaguard.org  / Research@12345");
+    console.log("=======================================================\n");
+  }
 }
 
 if (process.argv[1] && process.argv[1].endsWith("seed.js")) {

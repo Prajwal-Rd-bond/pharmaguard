@@ -394,6 +394,58 @@ describe("Phase 2 Step 1 — Security Fixes Verification", () => {
     // 4e. .env.example documents AUTO_SEED
     const rootEnvExample = fs.readFileSync(path.resolve(serverDir, "..", ".env.example"), "utf8");
     assert.match(rootEnvExample, /^AUTO_SEED=/m);
+
+    // 4f. Demo credentials banner printed only when NODE_ENV === "development", not for "test" or "production"
+    const capturedLogs = [];
+    const origLog = console.log;
+    const origCount = Report.countDocuments;
+    Report.countDocuments = async () => 5;
+    console.log = (...args) => capturedLogs.push(args.join(" "));
+    try {
+      // For "production" (refuses seedDatabase)
+      await assert.rejects(
+        () => seedDatabase({ env: "production", skipConnect: true }),
+        /Refusing to run demo database seeder in production/i
+      );
+      assert.equal(
+        capturedLogs.some((l) => l.includes("PharmaGuard Demo User Credentials Ready")),
+        false,
+        "Credentials banner must NOT be printed for production"
+      );
+
+      // For "test"
+      capturedLogs.length = 0;
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = "test";
+      try {
+        await seedDatabase({ env: "test", skipConnect: true });
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+      assert.equal(
+        capturedLogs.some((l) => l.includes("PharmaGuard Demo User Credentials Ready")),
+        false,
+        "Credentials banner must NOT be printed for test"
+      );
+
+      // For "development"
+      capturedLogs.length = 0;
+      const prevEnvDev = process.env.NODE_ENV;
+      process.env.NODE_ENV = "development";
+      try {
+        await seedDatabase({ env: "development", skipConnect: true });
+      } finally {
+        process.env.NODE_ENV = prevEnvDev;
+      }
+      assert.equal(
+        capturedLogs.some((l) => l.includes("PharmaGuard Demo User Credentials Ready")),
+        true,
+        "Credentials banner MUST be printed for development"
+      );
+    } finally {
+      console.log = origLog;
+      Report.countDocuments = origCount;
+    }
   });
 
   test("5. Importing app.js with Mongo and Redis unavailable opens no connections, and tracingMiddleware is first", async () => {
@@ -536,6 +588,32 @@ describe("Phase 2 Step 1 — Security Fixes Verification", () => {
     assert.doesNotThrow(
       () => assertProductionSecrets({ NODE_ENV: "production", JWT_SECRET: validJwt, PHI_ENCRYPTION_KEY: validPhi, MFA_PENDING_SECRET: validMfa, SMART_SANDBOX_ENABLED: "true", SMART_CLIENT_SECRET: validSmart })
     );
+
+    // Criterion E: assertProductionSecrets rejects the exact placeholder strings in root .env.example and server/.env.example
+    const placeholders = [
+      "change-me-in-production",
+      "replace_with_a_secure_random_64_character_hex_secret_in_production",
+      "change-me-in-production-32-byte-secret",
+      "replace_with_a_secure_32_byte_aes_key_for_phi_encryption",
+    ];
+
+    for (const ph of placeholders) {
+      assert.throws(
+        () => assertProductionSecrets({ NODE_ENV: "production", JWT_SECRET: ph, PHI_ENCRYPTION_KEY: validPhi, MFA_PENDING_SECRET: validMfa }),
+        (err) => err instanceof MissingSecretError && err.secretName === "JWT_SECRET",
+        `Must reject exact placeholder '${ph}' for JWT_SECRET`
+      );
+      assert.throws(
+        () => assertProductionSecrets({ NODE_ENV: "production", JWT_SECRET: validJwt, PHI_ENCRYPTION_KEY: ph, MFA_PENDING_SECRET: validMfa }),
+        (err) => err instanceof MissingSecretError && err.secretName === "PHI_ENCRYPTION_KEY",
+        `Must reject exact placeholder '${ph}' for PHI_ENCRYPTION_KEY`
+      );
+      assert.throws(
+        () => assertProductionSecrets({ NODE_ENV: "production", JWT_SECRET: validJwt, PHI_ENCRYPTION_KEY: validPhi, MFA_PENDING_SECRET: ph }),
+        (err) => err instanceof MissingSecretError && err.secretName === "MFA_PENDING_SECRET",
+        `Must reject exact placeholder '${ph}' for MFA_PENDING_SECRET`
+      );
+    }
 
     await assert.rejects(
       () =>

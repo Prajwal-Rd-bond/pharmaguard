@@ -198,3 +198,52 @@ test("Step 3.2: All collaborator endpoints mount on Express app", () => {
     assert.ok(routes.includes(exp), `Expected Express route '${exp}' not found in: ${routes.join("; ")}`);
   }
 });
+
+test("Step 3.3: Express Classification and Report models persist all 5 intentional_deltas expedited_clock_label values", () => {
+  const labels = [
+    "none",
+    "potential_7_day",
+    "potential_15_day",
+    "expedited_7_day",
+    "expedited_15_day",
+  ];
+  for (const label of labels) {
+    const isNone = label === "none";
+    const isPotential = label.startsWith("potential_");
+    const periodicDays = (isNone || isPotential) ? 90 : null;
+
+    const clf = new Classification({
+      pipelineRunId: `test-run-${label}`,
+      severity: "serious",
+      confidence: 0.95,
+      isSerious: true,
+      regulatoryClockDays: label.includes("7_day") ? 7 : 15,
+      expeditedClockLabel: label,
+      expedited_clock_label: label,
+      periodicClockDays: periodicDays,
+      periodic_clock_days: periodicDays,
+    });
+    const clfJson = clf.toJSON();
+    assert.equal(clfJson.expeditedClockLabel, label);
+    assert.equal(clfJson.expedited_clock_label, label);
+    assert.equal(clfJson.periodicClockDays, periodicDays);
+    assert.equal(clfJson.periodic_clock_days, periodicDays);
+
+    const rep = new Report({
+      patientId: "patient-1",
+      submittedBy: new mongoose.Types.ObjectId(),
+      drugName: "TestDrug",
+      adverseEvent: "TestEvent",
+      severity: "serious",
+      expeditedClockLabel: label,
+      expedited_clock_label: label,
+      periodicClockDays: periodicDays,
+      periodic_clock_days: periodicDays,
+    });
+    const repJson = rep.toJSON();
+    assert.equal(repJson.expeditedClockLabel, label);
+    assert.equal(repJson.expedited_clock_label, label);
+    assert.equal(repJson.periodicClockDays, periodicDays);
+    assert.equal(repJson.periodic_clock_days, periodicDays);
+  }
+});

@@ -388,6 +388,21 @@ def test_expedited_regulatory_clock_requires_serious_unexpected_and_related():
     assert c3["due_date"] is None
     assert c3["receipt_date_required"] is True
 
+    # 3b. Serious (hospitalization) + unexpected=None (unconfirmed at intake) -> potential_15_day (applies=False)
+    c3b = evaluate_expedited_regulatory_clock(
+        is_serious=True,
+        criteria=["hospitalization"],
+        unexpected=None,
+        reasonably_related=None,
+    )
+    assert c3b["applies"] is False
+    assert c3b["clock_type"] == "potential"
+    assert c3b["label"] == "potential_15_day"
+    assert c3b["expedited_clock_days"] is None
+    assert c3b["potential_clock_days"] == 15
+    assert c3b["due_date"] is None
+    assert c3b["receipt_date_required"] is True
+
     # 4. Serious + unexpected=False (known labeled reaction) -> none
     c4 = evaluate_expedited_regulatory_clock(
         is_serious=True,

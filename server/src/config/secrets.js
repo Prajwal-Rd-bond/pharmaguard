@@ -18,6 +18,7 @@ const DEV_SMART_CLIENT_FALLBACK = "pharmaguard-smart-client-secret-dev"; // dev/
 // Values copied from templates that must never be accepted in production.
 const PLACEHOLDER_VALUES = new Set([
   "change-me-in-production",
+  "change-me-in-production-32-byte-secret",
   "changeme",
   "change-me",
   "secret",
@@ -44,7 +45,13 @@ export function resolveEffectiveNodeEnv(env = process.env) {
 }
 
 function isUsable(value) {
-  return typeof value === "string" && value.trim().length >= 16 && !PLACEHOLDER_VALUES.has(value.trim());
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 16) return false;
+  if (PLACEHOLDER_VALUES.has(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("replace_with_") || lower.startsWith("change-me")) return false;
+  return true;
 }
 
 export class MissingSecretError extends Error {
