@@ -304,6 +304,12 @@ export default function ReportDetail() {
   const terminology = report.terminology || extraction?.terminology;
 
   const clockDays = report.regulatoryClockDays || 15;
+  const expeditedClockLabel =
+    report.expeditedClockLabel ||
+    report.expedited_clock_label ||
+    classification?.expeditedClockLabel ||
+    classification?.expedited_clock_label ||
+    "none";
   const dueDate = report.regulatoryDueDate ? new Date(report.regulatoryDueDate) : null;
   const hoursLeft = dueDate ? Math.round((dueDate - new Date()) / 3600000) : null;
   const isOverdue = report.clockStatus === "OVERDUE" || (hoursLeft !== null && hoursLeft < 0);
@@ -722,6 +728,9 @@ export default function ReportDetail() {
                   <div className="rounded bg-ink-50 p-3">
                     <span className="text-ink-400 block font-medium">Expedited SLA</span>
                     <span className="text-base font-extrabold text-ink-900">{clockDays}-Day Clock</span>
+                    <span className="text-[11px] text-ink-500 block mt-0.5 font-mono">
+                      {expeditedClockLabel}
+                    </span>
                   </div>
                   <div className="rounded bg-ink-50 p-3">
                     <span className="text-ink-400 block font-medium">SLA Deadline</span>
@@ -841,14 +850,38 @@ export default function ReportDetail() {
 
               {retrievals?.length > 0 && (
                 <div className="card p-5 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-ink-900">
-                    Supporting Literature & FDA Drug Labels (RAG)
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-ink-900">
+                      Supporting Literature & FDA Drug Labels (RAG)
+                    </h3>
+                    {(report.evidenceStatus || report.evidence_status) && (
+                      <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                        Evidence Status: {report.evidenceStatus || report.evidence_status}
+                      </span>
+                    )}
+                  </div>
                   <div className="space-y-3">
                     {retrievals.map((r, i) => (
                       <div key={i} className="rounded-lg bg-ink-50 p-3 border border-ink-100 text-xs">
-                        <div className="flex items-center justify-between font-bold text-ink-900">
-                          <span>{r.title}</span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 font-bold text-ink-900">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {r.sourceCollection && (
+                              <span className="rounded bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700 border border-brand-200">
+                                {r.sourceCollection}
+                              </span>
+                            )}
+                            {(r.corpusOrigin || r.corpus_origin) && (
+                              <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                                {r.corpusOrigin || r.corpus_origin}
+                              </span>
+                            )}
+                            {r.corpusOrigin === "builtin_demo_corpus" && (
+                              <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                                Demo Citation
+                              </span>
+                            )}
+                            <span>{r.title}</span>
+                          </div>
                           <span className="text-[10px] text-ink-400">Score: {r.similarityScore}</span>
                         </div>
                         <p className="mt-1 text-ink-600 leading-relaxed">{r.snippet}</p>

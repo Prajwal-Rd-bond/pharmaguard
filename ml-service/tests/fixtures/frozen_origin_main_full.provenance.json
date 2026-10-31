@@ -1,0 +1,17 @@
+{
+  "fixture_file": "frozen_origin_main_full.json",
+  "source_commit": "f2a797f",
+  "source_worktree": ".worktrees/origin-main",
+  "app_init_path": "d:\\pharmaguard\\.worktrees\\origin-main\\ml-service\\app\\__init__.py",
+  "script": "inline python (TestClient POST /pipeline/run); no checked-in capture script",
+  "capture_command": "python -c \"from fastapi.testclient import TestClient; from app.main import app; ... client.post('/pipeline/run', json={'pipeline_run_id': 'run-123', 'raw_text': 'Patient: Jane Doe, MRN: 12345. Took amoxicillin and got rash.'})\"",
+  "network_used": true,
+  "network_detail": "Capture made with outbound network available: origin-main's retrieve_live_evidence_for_drug() called https://api.fda.gov, producing the 3rd retrieval (source_id fda-amoxicillin). Without network that retrieval is absent (2 retrievals). Tests replay that recorded item offline via tests/conftest.py.",
+  "api_keys_used": false,
+  "env_cleared": "LLM_PROVIDER/LLM_API_KEY not set; no keys used",
+  "run1_sha256": "ae039c46c7648778f40dcdb356c96b0c2ac73221a2cfe2c8068dd5d6f471cbc4",
+  "run2_sha256": "ae039c46c7648778f40dcdb356c96b0c2ac73221a2cfe2c8068dd5d6f471cbc4",
+  "line_endings": "LF",
+  "correction": "An earlier version of this sidecar stated network_used=false; that was incorrect.",
+  "notes": "Pure origin-main capture; no _provenance or additive fields inside the fixture body."
+}

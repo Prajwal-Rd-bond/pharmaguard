@@ -73,22 +73,32 @@ export function generateTOTP(secretBase32, timeStepSeconds = 30, timestampMs = D
 }
 
 /**
- * Verifies a 6-digit TOTP token against a secret with clock drift tolerance.
+ * Returns the absolute RFC 6238 time-step counter that the token matches (within the drift
+ * window), or null. The counter is what callers persist to reject replays of a used code.
  */
-export function verifyTOTPToken(secretBase32, token, window = 1, timeStepSeconds = 30) {
-  if (!secretBase32 || !token) return false;
+export function matchTOTPStep(secretBase32, token, window = 1, timeStepSeconds = 30, nowMs = Date.now()) {
+  if (!secretBase32 || !token) return null;
   const cleanToken = String(token).trim();
-  if (cleanToken.length !== 6) return false;
+  if (!/^\d{6}$/.test(cleanToken)) return null;
 
-  const nowMs = Date.now();
-  for (let step = -window; step <= window; step++) {
-    const testTime = nowMs + step * timeStepSeconds * 1000;
-    const generated = generateTOTP(secretBase32, timeStepSeconds, testTime);
+  const currentCounter = Math.floor(nowMs / 1000 / timeStepSeconds);
+  for (let offset = -window; offset <= window; offset++) {
+    const counter = currentCounter + offset;
+    const generated = generateTOTP(secretBase32, timeStepSeconds, counter * timeStepSeconds * 1000);
     if (crypto.timingSafeEqual(Buffer.from(cleanToken), Buffer.from(generated))) {
-      return true;
+      return counter;
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Verifies a 6-digit TOTP token against a secret with clock drift tolerance.
+ * Stateless: does NOT prevent replay. Login/MFA flows must use utils/mfaService.js, which
+ * additionally records the last used time-step per user.
+ */
+export function verifyTOTPToken(secretBase32, token, window = 1, timeStepSeconds = 30) {
+  return matchTOTPStep(secretBase32, token, window, timeStepSeconds) !== null;
 }
 
 /**

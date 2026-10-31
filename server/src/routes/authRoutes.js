@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { register, login, me, setupMFA, verifyMFA, disableMFA } from "../controllers/authController.js";
+import { register, login, verifyLogin, me, setupMFA, verifyMFA, disableMFA } from "../controllers/authController.js";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimiter } from "../middleware/rateLimiter.js";
 
@@ -13,6 +13,7 @@ const authLimiter = rateLimiter({
 
 router.post("/register", authLimiter, register);
 router.post("/login", authLimiter, login);
+router.post("/mfa/verify-login", authLimiter, verifyLogin);
 router.get("/me", requireAuth, me);
 
 // Phase 2E: Two-Factor Authentication (TOTP)

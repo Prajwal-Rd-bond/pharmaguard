@@ -7,12 +7,21 @@ const classificationSchema = new mongoose.Schema(
     pipelineRunId: { type: String, required: true },
     severity: { type: String, enum: ["mild", "moderate", "serious", "life_threatening"], required: true },
     isSerious: { type: Boolean, default: false },
+    is_serious: { type: Boolean, default: false },
     seriousnessCriteria: [
       {
         type: String,
-        enum: ["death", "hospitalization", "disability", "congenital_anomaly", "life_threatening", "medically_important"],
+        enum: ["death", "hospitalization", "disability", "congenital_anomaly", "life_threatening", "medically_important", "medically_significant", "other_serious"],
       },
     ],
+    ichE2ACriteria: [String],
+    ich_e2a_criteria: [String],
+    regulatoryClockDays: { type: Number, default: 15 },
+    regulatory_clock_days: { type: Number, default: 15 },
+    periodicClockDays: { type: Number },
+    periodic_clock_days: { type: Number },
+    expeditedClockLabel: { type: String },
+    expedited_clock_label: { type: String },
     confidence: { type: Number, min: 0, max: 1, required: true },
     modelName: String, // e.g. "ollama:llama3.2:3b", "rule_based_baseline"
     modelVersion: String,
