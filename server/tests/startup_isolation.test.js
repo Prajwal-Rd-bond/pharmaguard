@@ -7,18 +7,20 @@ import { isDirectExecution, shouldAutoSeed, start } from "../src/index.js";
 
 describe("Phase 1 Follow-up — Entry Point & Startup Isolation", () => {
   test("1. isDirectExecution returns true only when resolved process.argv[1] matches script path", () => {
-    const dummyUrl = pathToFileURL("C:/pharmaguard/server/src/index.js").href;
-    const samePath = "C:/pharmaguard/server/src/index.js";
-    const samePathBackslash = "C:\\pharmaguard\\server\\src\\index.js";
-    const differentPath = "C:/pharmaguard/server/tests/some_test.js";
+    const dummyPath = path.resolve("src", "index.js");
+    const dummyUrl = pathToFileURL(dummyPath).href;
+    const samePath = dummyPath;
+    const relativePath = path.relative(process.cwd(), dummyPath);
+    const differentPath = path.resolve("tests", "some_test.js");
 
     assert.equal(isDirectExecution(samePath, dummyUrl), true);
-    assert.equal(isDirectExecution(samePathBackslash, dummyUrl), true);
+    assert.equal(isDirectExecution(relativePath, dummyUrl), true);
     assert.equal(isDirectExecution(differentPath, dummyUrl), false);
   });
 
   test("2. isDirectExecution safely returns false for missing or invalid argv[1]", () => {
-    const dummyUrl = pathToFileURL("C:/pharmaguard/server/src/index.js").href;
+    const dummyPath = path.resolve("src", "index.js");
+    const dummyUrl = pathToFileURL(dummyPath).href;
 
     assert.equal(isDirectExecution(undefined, dummyUrl), false);
     assert.equal(isDirectExecution(null, dummyUrl), false);

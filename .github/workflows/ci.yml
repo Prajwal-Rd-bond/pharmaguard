@@ -18,11 +18,25 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - name: Install dependencies
+      - name: Setup Python for contract test
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ml-service/requirements.txt
+      - name: Install ML dependencies for contract test
+        working-directory: ml-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+      - name: Install server dependencies
         working-directory: server
         run: npm ci
       - name: Run server test suite
         working-directory: server
+        env:
+          PYTHON_BIN: python
         run: npm test
 
   ml-service-tests:
@@ -41,6 +55,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
       - name: Run ML test suite
         working-directory: ml-service
         env:

@@ -17,7 +17,10 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from pydantic import BaseModel, Field
 
-from fastembed import TextEmbedding
+try:
+    from fastembed import TextEmbedding
+except ImportError:
+    TextEmbedding = None
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
@@ -28,7 +31,7 @@ from .openfda import fetch_openfda_labels
 logger = logging.getLogger(__name__)
 
 # Module-level embedding model cache
-_EMBED_MODEL: Optional[TextEmbedding] = None
+_EMBED_MODEL: Optional[Any] = None
 # In-memory fallback index for environments without a live Qdrant container
 _IN_MEMORY_FALLBACK_STORE: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -48,15 +51,20 @@ class StoreSearchResultList(list):
         return StoreSearchResult(status=self.status, items=list(self))
 
 
-def get_embed_model(model_name: str = "BAAI/bge-small-en-v1.5", cache_dir: str = "") -> TextEmbedding:
+def get_embed_model(model_name: str = "BAAI/bge-small-en-v1.5", cache_dir: str = "") -> Any:
     global _EMBED_MODEL
     if _EMBED_MODEL is None:
+        if TextEmbedding is None:
+            class InMemEmbedder:
+                def embed(self, texts):
+                    for _ in texts:
+                        yield np.zeros(384, dtype=np.float32)
+            return InMemEmbedder()
         kwargs = {"model_name": model_name}
         if cache_dir:
             kwargs["cache_dir"] = cache_dir
         _EMBED_MODEL = TextEmbedding(**kwargs)
     return _EMBED_MODEL
-
 
 class EvidenceStore:
     def __init__(

@@ -22,7 +22,9 @@ export function isDirectExecution(argv1 = process.argv[1], importMetaUrl = impor
   try {
     const scriptPath = path.resolve(fileURLToPath(importMetaUrl));
     const executedPath = path.resolve(argv1);
-    return scriptPath.toLowerCase() === executedPath.toLowerCase();
+    return process.platform === "win32"
+      ? scriptPath.toLowerCase() === executedPath.toLowerCase()
+      : scriptPath === executedPath;
   } catch {
     return false;
   }

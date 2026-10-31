@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import mongoose from "mongoose";
 import app from "../src/app.js";
 import Report from "../src/models/Report.js";
@@ -55,8 +56,13 @@ assert resp.status_code == 200, resp.text
 print("__JSON_START__" + json.dumps(resp.json()) + "__JSON_END__")
 `;
 
+  const defaultPython = process.platform === "win32" && fs.existsSync("D:\\pharmaguard\\ml-service\\.venv\\Scripts\\python.exe")
+    ? "D:\\pharmaguard\\ml-service\\.venv\\Scripts\\python.exe"
+    : "python";
+  const pythonBin = process.env.PYTHON_BIN || process.env.PYTHON_PATH || defaultPython;
+
   const proc = spawnSync(
-    "D:\\pharmaguard\\ml-service\\.venv\\Scripts\\python.exe",
+    pythonBin,
     ["-c", pyScript],
     {
       cwd: new URL("../../ml-service", import.meta.url),
@@ -64,7 +70,10 @@ print("__JSON_START__" + json.dumps(resp.json()) + "__JSON_END__")
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1", PYTHONPATH: "" },
     }
   );
-  assert.equal(proc.status, 0, `Python /pipeline/run failed: ${proc.stderr}`);
+  if (proc.error) {
+    assert.fail(`Python interpreter failed to execute (${pythonBin}): ${proc.error.message || proc.error}`);
+  }
+  assert.equal(proc.status, 0, `Python /pipeline/run failed (code ${proc.status}): ${proc.stderr || proc.stdout}`);
   const match = proc.stdout.match(/__JSON_START__(.+?)__JSON_END__/s);
   assert.ok(match, `Missing JSON marker in stdout: ${proc.stdout}`);
   const mlResult = JSON.parse(match[1]);
