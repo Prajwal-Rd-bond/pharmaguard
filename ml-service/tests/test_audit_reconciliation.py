@@ -115,6 +115,7 @@ def test_trusted_fda_patient_counseling_headings_pass_end_to_end_pipeline(monkey
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setenv("LLM_MODEL", "qwen3:8b")
+    monkeypatch.setenv("ALLOW_BUILTIN_REFERENCE_CORPUS", "false")
     get_settings.cache_clear()
 
     monkeypatch.setattr(
@@ -299,6 +300,7 @@ def test_mixed_trusted_records_contaminated_and_clean_partial_pii_rejected(monke
 
     monkeypatch.setenv("ENABLE_LIVE_OPENFDA", "true")
     monkeypatch.setenv("LLM_PROVIDER", "disabled")
+    monkeypatch.setenv("ALLOW_BUILTIN_REFERENCE_CORPUS", "false")
     get_settings.cache_clear()
 
     monkeypatch.setattr(

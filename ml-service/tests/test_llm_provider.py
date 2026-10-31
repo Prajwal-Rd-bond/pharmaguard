@@ -1442,8 +1442,10 @@ def test_pipeline_run_when_provider_disabled_matches_frozen_stages_and_computes_
     """
     import app.config
     import app.main as main_mod
+    import app.pipeline.classify as classify_mod
 
     monkeypatch.setattr(extract_mod, "client", None)
+    monkeypatch.setattr(classify_mod, "clf_pipeline", None)
 
     assess_spy = MagicMock(wraps=main_mod.run_causality_assessment)
     norm_spy = MagicMock(wraps=main_mod.normalize_drug)
