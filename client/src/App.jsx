@@ -9,6 +9,8 @@ import PageTransition from "./components/PageTransition";
 
 import Intake from "./pages/Intake";
 import ReviewQueue from "./pages/ReviewQueue";
+import Cases from "./pages/Cases";
+import Analytics from "./pages/Analytics";
 import ReportDetail from "./pages/ReportDetail";
 import Dashboard from "./pages/Dashboard";
 import UserManagement from "./pages/UserManagement";
@@ -61,8 +63,10 @@ function AnimatedRoutes() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/cases" element={<Cases />} />
             <Route path="/intake" element={<ProtectedRoute roles={["doctor", "admin"]}><Intake /></ProtectedRoute>} />
-            <Route path="/queue" element={<ProtectedRoute roles={["pharmacist", "admin", "researcher"]}><ReviewQueue /></ProtectedRoute>} />
+            <Route path="/queue" element={<ProtectedRoute roles={["pharmacist", "admin", "researcher"]}><Cases /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute roles={["pharmacist", "admin", "researcher"]}><Analytics /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ReportDetail />} />
             <Route path="/audit-logs" element={<ProtectedRoute roles={["admin", "pharmacist"]}><AuditLog /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute roles={["admin"]}><UserManagement /></ProtectedRoute>} />

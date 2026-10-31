@@ -20,8 +20,11 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function login(email, password) {
-    const { data } = await api.post("/auth/login", { email, password });
+  async function login(email, password, mfaToken) {
+    const { data } = await api.post("/auth/login", { email, password, mfaToken });
+    if (data.mfaRequired) {
+      return { mfaRequired: true };
+    }
     localStorage.setItem("pharmaguard_token", data.token);
     setUser(data.user);
     return data.user;

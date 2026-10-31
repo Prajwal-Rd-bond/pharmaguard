@@ -20,30 +20,32 @@ export async function seedDatabase(options = {}) {
     await mongoose.connect(MONGO_URI);
   }
 
-  // 1. Seed or update default users
+  // 1. Seed default users
+
+  // 1. Seed default users
   const defaultUsers = [
     {
       name: "System Administrator",
       email: "admin@pharmaguard.org",
-      password: "Admin@12345",
+      password: process.env.DEV_ADMIN_PASSWORD || "Admin@12345",
       role: "admin",
     },
     {
       name: "Dr. Sarah Lin (Pharmacovigilance Lead)",
       email: "pharmacist@pharmaguard.org",
-      password: "Pharma@12345",
+      password: process.env.DEV_PHARMACIST_PASSWORD || "Pharma@12345",
       role: "pharmacist",
     },
     {
       name: "Dr. Marcus Vance (Cardiologist)",
       email: "doctor@pharmaguard.org",
-      password: "Doctor@12345",
+      password: process.env.DEV_DOCTOR_PASSWORD || "Doctor@12345",
       role: "doctor",
     },
     {
       name: "Elena Rostova (Safety Epidemiologist)",
       email: "researcher@pharmaguard.org",
-      password: "Research@12345",
+      password: process.env.DEV_RESEARCHER_PASSWORD || "Research@12345",
       role: "researcher",
     },
   ];
@@ -62,7 +64,7 @@ export async function seedDatabase(options = {}) {
         active: true,
         mfaEnabled: false,
       });
-      console.log(`[seed] Created user: ${u.email} (${u.role})`);
+      console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
     } else {
       // Never overwrite an existing user's passwordHash, role, or MFA state during seed upsert
       console.log(`[seed] Preserved existing user without overwriting password or role: ${u.email} (${existing.role})`);

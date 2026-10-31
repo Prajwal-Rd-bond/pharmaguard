@@ -209,6 +209,7 @@ def detect_signal_for_pair(drug: str, reaction: str) -> Dict[str, Any]:
 
     # 1. Exact match in curated data
     counts = None
+    provenance = "FAERS 2024-Q4"
     if (clean_drug, clean_rx) in CURATED_FAERS_DATA:
         counts = CURATED_FAERS_DATA[(clean_drug, clean_rx)]
     else:
@@ -219,24 +220,33 @@ def detect_signal_for_pair(drug: str, reaction: str) -> Dict[str, Any]:
                 clean_rx = r
                 break
 
-    # 2. Try live query
+    # 2. Try live query via OpenFDA
     if not counts:
         counts = query_openfda_contingency(clean_drug, clean_rx)
+        if counts:
+            provenance = "openfda_live"
 
-    # 3. Fallback heuristic baseline if not found
+    # 3. If unrecorded in database, return explicit INSUFFICIENT_DATA without synthetic placeholder counts
     if not counts:
-        # Default baseline with low reporting for unlisted combination
-        counts = {
-            "a": 5,
-            "b": 12000,
-            "c": 4500,
-            "d": TOTAL_FAERS_REPORTS - (5 + 12000 + 4500),
+        return {
+            "drug": clean_drug.capitalize(),
+            "reaction": clean_rx.title(),
+            "signal_status": "INSUFFICIENT_DATA",
+            "provenance": "INSUFFICIENT_DATA",
+            "data_source": "sample",
+            "reason": f"No adverse event reports recorded for '{clean_drug.capitalize()}' and '{clean_rx.title()}' in FAERS reference database.",
+            "contingency_table": {"a": 0, "b": 0, "c": 0, "d": TOTAL_FAERS_REPORTS},
+            "prr": {"value": 0.0, "ci_95": [0.0, 0.0], "chi2_yates": 0.0, "meets_evans_criteria": False},
+            "ror": {"value": 0.0, "ci_95": [0.0, 0.0], "meets_ror_criteria": False},
+            "bcpnn": {"ic": 0.0, "ic025": 0.0, "meets_ic_criteria": False},
         }
 
     metrics = calculate_disproportionality(counts["a"], counts["b"], counts["c"], counts["d"])
     return {
         "drug": clean_drug.capitalize(),
         "reaction": clean_rx.title(),
+        "provenance": provenance,
+        "data_source": provenance,
         **metrics,
     }
 

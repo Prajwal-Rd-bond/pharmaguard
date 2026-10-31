@@ -45,6 +45,7 @@ class RealtimeEventManager extends EventEmitter {
     const client = {
       id: `sse-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       res,
+      user: req?.user || null,
       connectedAt: new Date(),
     };
 
@@ -83,7 +84,7 @@ class RealtimeEventManager extends EventEmitter {
   }
 
   /**
-   * Broadcasts an event to all connected clients.
+   * Broadcasts an event to connected clients with doctor role filtering.
    *
    * @param {string} eventType - Event name
    * @param {Object} data - Event data
@@ -91,6 +92,13 @@ class RealtimeEventManager extends EventEmitter {
   broadcast(eventType, data) {
     this.emit(eventType, data);
     for (const client of this.clients) {
+      if (client.user?.role === "doctor") {
+        const eventAuthor = data?.submittedBy?.toString();
+        const clientUserId = client.user._id?.toString();
+        if (eventAuthor && clientUserId && eventAuthor !== clientUserId) {
+          continue; // Doctor never sees another clinician's report events
+        }
+      }
       this.sendEventToClient(client, eventType, data);
     }
   }
@@ -106,6 +114,7 @@ class RealtimeEventManager extends EventEmitter {
     const alert = {
       type: "SLA_URGENT_ALERT",
       reportId: report._id,
+      submittedBy: report.submittedBy?._id || report.submittedBy,
       isExpedited7Day: sla.isExpedited7Day,
       clockDays: sla.clockDays,
       hoursRemaining: sla.hoursRemaining,
@@ -132,6 +141,7 @@ class RealtimeEventManager extends EventEmitter {
     const payload = {
       type: "REPORT_INGESTED",
       reportId: report._id,
+      submittedBy: report.submittedBy?._id || report.submittedBy,
       source: report.source || "intake",
       isSerious,
       isExpedited,

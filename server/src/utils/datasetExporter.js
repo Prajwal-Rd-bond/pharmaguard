@@ -15,7 +15,7 @@ export function exportToBioNerFormat(examples) {
   const lines = [];
 
   for (const item of examples) {
-    const text = item.rawText || "";
+    const text = item.deidentifiedText || item.rawText || "";
     const gold = item.goldExtraction || {};
     const suspectDrugs = (gold.suspectDrug ? [gold.suspectDrug] : gold.drugs || []).map((d) => d.toLowerCase());
     const symptoms = (gold.symptoms || []).map((s) => s.toLowerCase());
@@ -53,7 +53,7 @@ export function exportToInstructionJsonl(examples) {
   const outputLines = [];
 
   for (const ex of examples) {
-    const rawNarrative = ex.rawText || "";
+    const rawNarrative = ex.deidentifiedText || ex.rawText || "";
     const gold = ex.goldExtraction || {};
     const aiProposed = ex.aiProposedExtraction || {};
     const clinicianCorrection = ex.clinicianDiff || {};

@@ -26,7 +26,7 @@ class TerminologyCoding(BaseModel):
 
 
 class ExtractionResult(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
 
     drugName: Optional[str] = None
     genericName: Optional[str] = None
@@ -45,10 +45,11 @@ class ExtractionResult(BaseModel):
     incomplete: bool = False
     modelVersion: str = "extraction-stub-0.1"
     promptVersion: str = "v1"
+    model_config = {"protected_namespaces": ()}
 
 
 class ClassificationResult(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
 
     severity: str  # mild | moderate | serious | life_threatening
     confidence: float

@@ -20,13 +20,29 @@ const router = Router();
 router.get("/metadata", getCapabilityStatement);
 router.get("/.well-known/smart-configuration", getSmartConfig);
 
+// Guard to disable simulator in production
+const devOnly = (req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "EHR launch simulation is disabled in production environments." });
+  }
+  next();
+};
+
 // 2. SMART-on-FHIR OAuth2 Launch Handshake Flow
 // Sandbox-only: these mint access tokens without a real EHR identity provider, so they are
 // disabled in production unless SMART_SANDBOX_ENABLED=true (see requireSmartSandbox).
 router.get("/auth/launch", requireSmartSandbox, initiateSmartLaunch);
 router.get("/auth/authorize", requireSmartSandbox, authorizeSmartLaunch);
 router.post("/auth/authorize", requireSmartSandbox, authorizeSmartLaunch);
-router.post("/auth/token", requireSmartSandbox, tokenExchangeSmartLaunch);
+router.post("/auth/token", requireSmartSandbox, (req, res, next) => {
+  if (!req.body || !req.body.code) {
+    return res.status(400).json({
+      error: "invalid_request",
+      error_description: "Missing required 'code' parameter in authorization code grant.",
+    });
+  }
+  return tokenExchangeSmartLaunch(req, res, next);
+});
 router.post("/auth/introspect", introspectSmartToken);
 
 // 3. Clinical Testing: 1-Click SMART EHR Launch Simulator (Epic / Cerner)

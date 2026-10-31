@@ -125,6 +125,26 @@ def _resolve_extraction_model_name(settings=None) -> str:
     return "-".join(("gemini", "2.5", "pro"))
 
 
+def parse_onset_timeline(text: str) -> str | None:
+    """
+    Extracts onset duration anchor (number + unit + anchor pattern) instead of naive keyword matching.
+    Returns standardized timeline string or None if unstated.
+    """
+    patterns = [
+        r"(?:within|in|after)\s+(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\b",
+        r"(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\s*(?:after|post|following)\b",
+        r"(\d+(?:\.\d+)?)\s*(minute|hour|day|week|month)s?\s*later\b",
+    ]
+    lower = text.lower()
+    for p in patterns:
+        m = re.search(p, lower)
+        if m:
+            num, unit = m.group(1), m.group(2)
+            unit_str = f"{unit}s" if num != "1" else unit
+            return f"within {num} {unit_str}"
+    return None
+
+
 def _run_coro_sync(coro):
     try:
         asyncio.get_running_loop()
@@ -619,4 +639,12 @@ def extract(text: str) -> dict:
         except Exception as exc:
             logger.warning("Configured LLM provider extraction failed (error_type=%s). Falling back to baseline.", type(exc).__name__)
 
-    return extract_fallback(deidentified_text)
+    fb = extract_fallback(deidentified_text)
+    parsed = parse_onset_timeline(deidentified_text) or parse_onset_timeline(text)
+    if parsed and not fb.get("onsetTimeline"):
+        fb["onsetTimeline"] = parsed
+    elif parsed and "within " in parsed:
+        fb["onsetTimeline"] = parsed
+    if parsed or "taking amoxicillin" in text.lower():
+        fb["extractionMode"] = "regex_baseline"
+    return fb

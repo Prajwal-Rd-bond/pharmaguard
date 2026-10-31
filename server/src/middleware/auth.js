@@ -4,7 +4,7 @@ import { getJwtSecret } from "../config/secrets.js";
 
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : req.query?.token || null;
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : req.query?.token || null;
   if (!token) return res.status(401).json({ error: "Missing bearer token" });
 
   try {
@@ -30,7 +30,19 @@ export async function requireAuth(req, res, next) {
         },
       };
     }
-    if (!user || !user.active) return res.status(401).json({ error: "Invalid or inactive user" });
+
+    if (!user || !user.active) {
+      return res.status(401).json({ error: "Invalid, inactive, or deactivated user account." });
+    }
+
+    if (payload.smart_context && !user.smartContext) {
+      user.smartContext = {
+        patient: payload.patient,
+        encounter: payload.encounter,
+        scope: payload.scope,
+      };
+    }
+
     req.user = user;
     next();
   } catch (err) {

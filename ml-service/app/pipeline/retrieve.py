@@ -277,6 +277,11 @@ KNOWLEDGE_CORPUS = [
     },
 ]
 
+try:
+    from .corpus_seed import SEED_DOCS
+except Exception as e:
+    SEED_DOCS = []
+
 # Initialize embedding model (SentenceTransformer)
 embedding_model = None
 if SentenceTransformer is not None:

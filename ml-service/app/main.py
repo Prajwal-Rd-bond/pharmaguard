@@ -99,6 +99,7 @@ def run_pipeline(req: PipelineRequest):
 
     classification = classify(
         extraction,
+        text=deidentified_text,
         unexpected=getattr(req, "unexpected", None),
         reasonably_related=getattr(req, "reasonably_related", None),
         receipt_date=getattr(req, "receipt_date", None),
@@ -136,7 +137,6 @@ def run_pipeline(req: PipelineRequest):
         summarize_privacy_blocked = True
     if summarize_privacy_blocked:
         raise HTTPException(status_code=500, detail=DeidentificationError.public_message)
-
     citation_verification = verify_summary_citations(summary, retrievals)
     causality = evaluate_naranjo_causality(extraction, deidentified_text)
 
@@ -283,7 +283,13 @@ def classify_endpoint(req: PipelineRequest):
     try:
         deidentified_text, _ = deidentify(req.raw_text)
         ext = extract(deidentified_text)
-        return classify(ext)
+        return classify(
+            ext,
+            text=deidentified_text,
+            unexpected=getattr(req, "unexpected", None),
+            reasonably_related=getattr(req, "reasonably_related", None),
+            receipt_date=getattr(req, "receipt_date", None),
+        )
     except Exception as exc:
         error_type = type(exc).__name__
     logger.error("Classification endpoint failed (error_type=%s).", error_type)

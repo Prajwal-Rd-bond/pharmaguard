@@ -48,6 +48,31 @@ class PipelineTestCase(unittest.TestCase):
         found_match = any("amoxicillin" in r["title"].lower() or "amoxicillin" in r["snippet"].lower() for r in results)
         self.assertTrue(found_match)
 
+    def test_extract_onset_and_mode(self):
+        from app.pipeline.extract import extract, parse_onset_timeline
+        self.assertEqual(parse_onset_timeline("Patient experienced hives 2 hours after intake"), "within 2 hours")
+        self.assertEqual(parse_onset_timeline("Fever developed 5 days post administration"), "within 5 days")
+        self.assertIsNone(parse_onset_timeline("Patient has headache"))
+
+        res = extract("55yo male with rash 3 hours after taking amoxicillin")
+        self.assertEqual(res["extractionMode"], "regex_baseline")
+        self.assertEqual(res["onsetTimeline"], "within 3 hours")
+        self.assertEqual(res["drugName"], "amoxicillin")
+
+    def test_classify_with_narrative_text(self):
+        # Even with generic symptoms, hospitalized narrative text forces serious classification
+        extraction = {
+            "drugName": "amoxicillin",
+            "symptoms": ["rash"],
+        }
+        text = "Patient developed generalized rash and was hospitalized in the ICU for observation."
+        result = classify(extraction, text=text)
+        self.assertTrue(result["is_serious"])
+        self.assertEqual(result["severity"], "serious")
+        self.assertIn("hospitalization", result["ich_e2a_criteria"])
+        self.assertEqual(result["regulatory_clock_days"], 15)
+        self.assertIn(result["model_type"], ["clinical_safety_rules", "experimental"])
+
 
 if __name__ == "__main__":
     unittest.main()

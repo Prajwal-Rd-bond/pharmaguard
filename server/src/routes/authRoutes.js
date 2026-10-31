@@ -1,12 +1,19 @@
 import { Router } from "express";
 import { register, login, verifyLogin, me, setupMFA, verifyMFA, disableMFA } from "../controllers/authController.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rateLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
-router.post("/register", register);
-router.post("/login", login);
-router.post("/mfa/verify-login", verifyLogin);
+const authLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: "Too many authentication attempts, please try again later."
+});
+
+router.post("/register", authLimiter, register);
+router.post("/login", authLimiter, login);
+router.post("/mfa/verify-login", authLimiter, verifyLogin);
 router.get("/me", requireAuth, me);
 
 // Phase 2E: Two-Factor Authentication (TOTP)
