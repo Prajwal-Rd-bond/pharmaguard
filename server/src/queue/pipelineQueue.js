@@ -10,6 +10,126 @@ import { logAction } from "../middleware/auditLogger.js";
 const jobStates = new Map();
 
 /**
+ * Normalizes ML-service snake_case pipeline response fields to both camelCase (UI/Mongoose)
+ * and snake_case (API/ML contract) so no field is dropped or mismatched across the boundary.
+ */
+export function normalizePipelineResultForServer(result = {}, receiptDate = null) {
+  const rawCausality = result.causality || null;
+  const normalizedCausality = rawCausality
+    ? {
+        naranjoScore: rawCausality.naranjoScore ?? rawCausality.naranjo_score ?? 0,
+        naranjoCategory: rawCausality.naranjoCategory ?? rawCausality.naranjo_category ?? "Possible",
+        whoUmcCategory: rawCausality.whoUmcCategory ?? rawCausality.who_umc_category ?? "Possible",
+        naranjoBreakdown: rawCausality.naranjoBreakdown ?? rawCausality.naranjo_breakdown ?? {},
+        unevidencedItems: rawCausality.unevidencedItems ?? rawCausality.unevidenced_items ?? [],
+        naranjo_score: rawCausality.naranjo_score ?? rawCausality.naranjoScore ?? 0,
+        naranjo_category: rawCausality.naranjo_category ?? rawCausality.naranjoCategory ?? "Possible",
+        who_umc_category: rawCausality.who_umc_category ?? rawCausality.whoUmcCategory ?? "Possible",
+        naranjo_breakdown: rawCausality.naranjo_breakdown ?? rawCausality.naranjoBreakdown ?? {},
+        unevidenced_items: rawCausality.unevidenced_items ?? rawCausality.unevidencedItems ?? [],
+        rationale: rawCausality.rationale ?? "",
+        confirmedByPharmacist: Boolean(rawCausality.confirmedByPharmacist),
+        pharmacistConfirmed: Boolean(rawCausality.pharmacistConfirmed ?? rawCausality.confirmedByPharmacist),
+        pharmacistNotes: rawCausality.pharmacistNotes,
+      }
+    : null;
+
+  const rawTerm = result.extraction?.terminology || result.terminology || null;
+  const normalizedTerminology = rawTerm
+    ? {
+        drugRxNorm: rawTerm.drugRxNorm ?? rawTerm.drug_rxnorm ?? null,
+        meddraAdverseEvents: rawTerm.meddraAdverseEvents ?? rawTerm.meddra_adverse_events ?? [],
+        drug_rxnorm: rawTerm.drug_rxnorm ?? rawTerm.drugRxNorm ?? null,
+        meddra_adverse_events: rawTerm.meddra_adverse_events ?? rawTerm.meddraAdverseEvents ?? [],
+      }
+    : null;
+
+  const ichCriteria =
+    result.classification?.ich_e2a_criteria ??
+    result.classification?.ichE2ACriteria ??
+    [];
+  const isSerious = Boolean(
+    result.classification?.is_serious ?? result.classification?.isSerious
+  );
+  const clockDays =
+    result.classification?.regulatory_clock_days ??
+    result.classification?.regulatoryClockDays ??
+    15;
+  const expeditedClockLabel =
+    result.classification?.expedited_clock_label ??
+    result.classification?.expeditedClockLabel ??
+    "none";
+  const periodicClockDays =
+    result.classification?.periodic_clock_days ??
+    result.classification?.periodicClockDays ??
+    (expeditedClockLabel === "none" ? 90 : null);
+  const anchorTime = receiptDate ? new Date(receiptDate).getTime() : Date.now();
+  const dueDate = new Date(anchorTime + clockDays * 24 * 60 * 60 * 1000);
+  const evidenceStatus = result.evidence_status ?? result.evidenceStatus ?? "ok";
+  const assessmentStatus = result.assessment_status ?? result.assessmentStatus ?? null;
+  const citationVerification = result.citation_verification ?? result.citationVerification ?? null;
+  const normalizedDrug = result.normalized_drug ?? result.normalizedDrug ?? null;
+
+  const normalizedExtraction = result.extraction
+    ? {
+        ...result.extraction,
+        terminology: normalizedTerminology,
+        rxNormId:
+          result.extraction.rxNormId ??
+          normalizedTerminology?.drugRxNorm?.rxcui ??
+          undefined,
+      }
+    : {};
+
+  const normalizedClassification = result.classification
+    ? {
+        severity: result.classification.severity,
+        confidence: result.classification.confidence,
+        modelName: result.classification.model_name ?? result.classification.modelName,
+        modelVersion: result.classification.model_version ?? result.classification.modelVersion,
+        isSerious,
+        is_serious: isSerious,
+        seriousnessCriteria: ichCriteria,
+        ichE2ACriteria: ichCriteria,
+        ich_e2a_criteria: ichCriteria,
+        regulatoryClockDays: clockDays,
+        regulatory_clock_days: clockDays,
+        periodicClockDays,
+        periodic_clock_days: periodicClockDays,
+        expeditedClockLabel,
+        expedited_clock_label: expeditedClockLabel,
+        priorityReview:
+          ["serious", "life_threatening"].includes(result.classification.severity) || isSerious,
+      }
+    : null;
+
+  return {
+    causality: normalizedCausality,
+    terminology: normalizedTerminology,
+    ichE2ACriteria: ichCriteria,
+    isSerious,
+    regulatoryClockDays: clockDays,
+    regulatory_clock_days: clockDays,
+    periodicClockDays,
+    periodic_clock_days: periodicClockDays,
+    expeditedClockLabel,
+    expedited_clock_label: expeditedClockLabel,
+    regulatoryDueDate: dueDate,
+    evidenceStatus,
+    evidence_status: evidenceStatus,
+    assessmentStatus,
+    assessment_status: assessmentStatus,
+    assessment: result.assessment ?? null,
+    normalizedDrug,
+    normalized_drug: normalizedDrug,
+    citationVerification,
+    citation_verification: citationVerification,
+    extraction: normalizedExtraction,
+    classification: normalizedClassification,
+  };
+}
+
+/**
  * Worker handler that executes the full multi-stage AI pipeline
  * and persists results independently to MongoDB.
  */
@@ -56,15 +176,28 @@ export async function executePipelineTask({ reportId, userId, jobId }) {
   report.summary = result.summary;
   report.summaryModelVersion = result.extraction?.modelVersion || "summary-v1";
 
-  // Phase 2B & 2C: Regulatory, Causality, Terminology, Citations
-  report.ichE2ACriteria = result.classification?.ich_e2a_criteria || [];
-  report.isSerious = Boolean(result.classification?.is_serious);
-  const clockDays = result.classification?.regulatory_clock_days || 15;
-  report.regulatoryClockDays = clockDays;
-  report.regulatoryDueDate = new Date(Date.now() + clockDays * 24 * 60 * 60 * 1000);
-  report.causality = result.causality || null;
-  report.terminology = result.extraction?.terminology || null;
-  report.citationVerification = result.citation_verification || null;
+  // Phase 2B & 2C: Regulatory, Causality, Terminology, Citations (normalized across snake_case & camelCase)
+  const normalized = normalizePipelineResultForServer(result, report.createdAt);
+  report.ichE2ACriteria = normalized.ichE2ACriteria;
+  report.isSerious = normalized.isSerious;
+  report.regulatoryClockDays = normalized.regulatoryClockDays;
+  report.regulatory_clock_days = normalized.regulatory_clock_days;
+  report.expeditedClockLabel = normalized.expeditedClockLabel;
+  report.expedited_clock_label = normalized.expedited_clock_label;
+  report.periodicClockDays = normalized.periodicClockDays;
+  report.periodic_clock_days = normalized.periodic_clock_days;
+  report.regulatoryDueDate = normalized.regulatoryDueDate;
+  report.causality = normalized.causality;
+  report.terminology = normalized.terminology;
+  report.citationVerification = normalized.citationVerification;
+  report.citation_verification = normalized.citation_verification;
+  report.evidenceStatus = normalized.evidenceStatus;
+  report.evidence_status = normalized.evidence_status;
+  report.assessmentStatus = normalized.assessmentStatus;
+  report.assessment_status = normalized.assessment_status;
+  report.assessment = normalized.assessment;
+  report.normalizedDrug = normalized.normalizedDrug;
+  report.normalized_drug = normalized.normalized_drug;
 
   report.status = "pending_review";
   await report.save();
@@ -72,17 +205,13 @@ export async function executePipelineTask({ reportId, userId, jobId }) {
   const extraction = await Extraction.create({
     report: report._id,
     pipelineRunId,
-    ...result.extraction,
+    ...normalized.extraction,
   });
 
   const classification = await Classification.create({
     report: report._id,
     pipelineRunId,
-    severity: result.classification.severity,
-    confidence: result.classification.confidence,
-    modelName: result.classification.model_name,
-    modelVersion: result.classification.model_version,
-    priorityReview: ["serious", "life_threatening"].includes(result.classification.severity),
+    ...normalized.classification,
   });
 
   const retrievals = await Retrieval.insertMany(
@@ -94,6 +223,7 @@ export async function executePipelineTask({ reportId, userId, jobId }) {
       title: r.title,
       snippet: r.snippet,
       similarityScore: r.similarity_score,
+      corpusOrigin: r.corpus_origin || (r.source_collection === "drug_labels" ? "builtin_demo_corpus" : undefined),
     }))
   );
 
@@ -121,7 +251,11 @@ export async function executePipelineTask({ reportId, userId, jobId }) {
 let bullQueue = null;
 let bullWorker = null;
 
-async function initQueue() {
+let queueInitAttempted = false;
+
+export async function initQueue() {
+  if (queueInitAttempted) return;
+  queueInitAttempted = true;
   if (process.env.DISABLE_REDIS === "true") return;
 
   try {
@@ -155,7 +289,9 @@ async function initQueue() {
   }
 }
 
-initQueue().catch(() => {});
+// Note: initQueue() is intentionally NOT called at module import time so importing
+// app.js or pipelineQueue.js opens zero network/Redis connections. Call initQueue()
+// from server bootstrap (index.js start()) when Redis-backed BullMQ is desired.
 
 /**
  * Enqueue report pipeline processing.

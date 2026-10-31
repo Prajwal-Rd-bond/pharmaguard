@@ -9,6 +9,7 @@ import {
   simulateSmartLaunchEndpoint,
   ingestFhirAdverseEvent,
   getFhirAdverseEventById,
+  requireSmartSandbox,
 } from "../controllers/fhirController.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
@@ -28,10 +29,12 @@ const devOnly = (req, res, next) => {
 };
 
 // 2. SMART-on-FHIR OAuth2 Launch Handshake Flow
-router.get("/auth/launch", initiateSmartLaunch);
-router.get("/auth/authorize", authorizeSmartLaunch);
-router.post("/auth/authorize", authorizeSmartLaunch);
-router.post("/auth/token", (req, res, next) => {
+// Sandbox-only: these mint access tokens without a real EHR identity provider, so they are
+// disabled in production unless SMART_SANDBOX_ENABLED=true (see requireSmartSandbox).
+router.get("/auth/launch", requireSmartSandbox, initiateSmartLaunch);
+router.get("/auth/authorize", requireSmartSandbox, authorizeSmartLaunch);
+router.post("/auth/authorize", requireSmartSandbox, authorizeSmartLaunch);
+router.post("/auth/token", requireSmartSandbox, (req, res, next) => {
   if (!req.body || !req.body.code) {
     return res.status(400).json({
       error: "invalid_request",
@@ -43,7 +46,7 @@ router.post("/auth/token", (req, res, next) => {
 router.post("/auth/introspect", introspectSmartToken);
 
 // 3. Clinical Testing: 1-Click SMART EHR Launch Simulator (Epic / Cerner)
-router.post("/launch/simulate", devOnly, simulateSmartLaunchEndpoint);
+router.post("/launch/simulate", requireSmartSandbox, simulateSmartLaunchEndpoint);
 
 // 4. FHIR AdverseEvent Ingestion & Reading
 router.use(requireAuth);

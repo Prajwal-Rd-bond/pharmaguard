@@ -49,12 +49,34 @@ def evaluate_naranjo_causality(extraction: dict, raw_text: str = "") -> Dict[str
     total_score += breakdown["q4_rechallenge_positive"]
 
     # Q5: Alternative causes that could solely have caused the reaction?
+    # Conservative scoring: 0 unless alternative causes or their absence are explicitly stated.
     comorbidities = extraction.get("comorbidities") or []
     concomitant = extraction.get("concomitantDrugs") or []
-    has_alternative = bool(comorbidities or len(concomitant) > 1)
-    # If no obvious alternative causes, +2; if present, -1
-    breakdown["q5_alternative_causes_absent"] = -1 if has_alternative else 2
+    has_explicit_alternative = bool(
+        comorbidities
+        or len(concomitant) > 1
+        or "alternative cause" in text_lower
+        or "viral infection" in text_lower
+        or "underlying disease" in text_lower
+    )
+    explicit_no_alternative = bool(
+        "no alternative cause" in text_lower
+        or "alternative causes ruled out" in text_lower
+        or "no other cause" in text_lower
+        or "no concomitant" in text_lower
+        or "ruled out other causes" in text_lower
+    )
+
+    if has_explicit_alternative:
+        q5_score = -1
+    elif explicit_no_alternative:
+        q5_score = 2
+    else:
+        q5_score = 0
+
+    breakdown["q5_alternative_causes_absent"] = q5_score
     total_score += breakdown["q5_alternative_causes_absent"]
+    has_alternative = has_explicit_alternative
 
     # Q6: Did reaction appear when placebo was given? (Typically unknown in spontaneous PV: 0)
     breakdown["q6_placebo_reaction"] = 0
@@ -114,11 +136,16 @@ def evaluate_naranjo_causality(extraction: dict, raw_text: str = "") -> Dict[str
         f"alternative etiologies ({'competing factors present' if has_alternative else 'none prominent'})."
     )
 
+    unevidenced_items = []
+    if breakdown.get("q1_previous_conclusive_reports", 0) > 0:
+        unevidenced_items.append("q1_previous_conclusive_reports")
+
     return {
         "naranjo_score": total_score,
         "naranjo_category": category,
         "naranjo_breakdown": breakdown,
         "who_umc_category": who_category,
         "rationale": rationale,
+        "unevidenced_items": unevidenced_items,
     }
 

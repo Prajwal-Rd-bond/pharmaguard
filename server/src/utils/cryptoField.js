@@ -1,9 +1,11 @@
 import crypto from "crypto";
+import { getPhiEncryptionSecret } from "../config/secrets.js";
 
-// Fallback master key derived via SHA-256 if PHI_ENCRYPTION_KEY is not explicitly configured
+// Key derivation: scrypt(secret). In production PHI_ENCRYPTION_KEY is mandatory
+// (getPhiEncryptionSecret throws otherwise); dev/test keep the legacy fallback chain.
 const DEFAULT_SALT = "pharmaguard-phi-salt-2026";
 function getEncryptionKey() {
-  const secret = process.env.PHI_ENCRYPTION_KEY || process.env.JWT_SECRET || "pharmaguard-default-phi-secret-key-32b";
+  const secret = getPhiEncryptionSecret();
   return crypto.scryptSync(secret, DEFAULT_SALT, 32);
 }
 

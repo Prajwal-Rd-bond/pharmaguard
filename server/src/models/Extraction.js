@@ -18,6 +18,7 @@ const extractionSchema = new mongoose.Schema(
     gender: String,
     comorbidities: [String],
     concomitantDrugs: [String],
+    terminology: { type: mongoose.Schema.Types.Mixed },
     incomplete: { type: Boolean, default: false }, // flagged instead of silently dropped
     rxNormId: String, // RxNorm RxCUI standard drug code
     meddraCodes: [

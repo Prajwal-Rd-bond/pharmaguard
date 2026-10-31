@@ -1,0 +1,48 @@
+{
+  "_provenance": {
+    "label": "hand-written synthetic payload, not captured",
+    "note": "Span '[REDACTED]' is new behavior, departing from collaborator's raw-span preservation."
+  },
+  "pipeline_run_id": "min-run-001",
+  "deidentified_text": "[REDACTED_NAME] experienced mild dizziness.",
+  "deidentification_log": [
+    {
+      "type": "name",
+      "span": "[REDACTED]"
+    }
+  ],
+  "extraction": {
+    "drugName": "aspirin",
+    "genericName": "aspirin",
+    "brandName": null,
+    "dosage": "81mg",
+    "frequency": "once daily",
+    "route": "oral",
+    "duration": null,
+    "symptoms": [
+      "dizziness"
+    ],
+    "onsetTimeline": null,
+    "age": 60,
+    "gender": "male",
+    "comorbidities": [],
+    "concomitantDrugs": [],
+    "terminology": null,
+    "incomplete": false,
+    "modelVersion": "extraction-stub-0.2",
+    "promptVersion": "v2"
+  },
+  "classification": {
+    "severity": "mild",
+    "confidence": 0.85,
+    "model_name": "rule_based_baseline",
+    "model_version": "0.2.0",
+    "ich_e2a_criteria": [],
+    "is_serious": false,
+    "regulatory_clock_days": 90
+  },
+  "retrievals": [],
+  "summary": "Report involves aspirin, with reported symptoms: dizziness.",
+  "citation_verification": null,
+  "causality": null
+}

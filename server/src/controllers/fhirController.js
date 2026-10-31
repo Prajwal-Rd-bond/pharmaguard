@@ -13,6 +13,25 @@ import { realtimeEventManager } from "../utils/realtimeEvents.js";
 import { recordAuditLog } from "../middleware/auditLogger.js";
 import { enqueueReportPipeline } from "../queue/pipelineQueue.js";
 import jwt from "jsonwebtoken";
+import { getJwtSecret, isProduction } from "../config/secrets.js";
+
+/**
+ * The SMART authorize / token / simulate endpoints are a sandbox: they mint "doctor" access
+ * tokens without authenticating the caller against a real EHR identity provider. They are
+ * disabled when NODE_ENV=production unless SMART_SANDBOX_ENABLED=true is set explicitly
+ * (an operator decision, documented in .env.example).
+ */
+export function smartSandboxAllowed(env = process.env) {
+  return !isProduction(env.NODE_ENV) || env.SMART_SANDBOX_ENABLED === "true";
+}
+
+export function requireSmartSandbox(req, res, next) {
+  if (smartSandboxAllowed()) return next();
+  return res.status(403).json({
+    error: "smart_sandbox_disabled",
+    error_description: "SMART sandbox endpoints are disabled in production.",
+  });
+}
 
 /**
  * Returns HL7 FHIR R4 CapabilityStatement with SMART OAuth2 security extensions.
@@ -161,8 +180,8 @@ export async function introspectSmartToken(req, res) {
   }
 
   try {
-    const jwtSecret = process.env.JWT_SECRET || "smart-fhir-dev-secret-pharma-2026";
-    const payload = jwt.verify(token, jwtSecret);
+    const payload = jwt.verify(token, getJwtSecret());
+    if (payload.typ && payload.typ !== "access") return res.json({ active: false });
     return res.json({
       active: true,
       scope: payload.scope,

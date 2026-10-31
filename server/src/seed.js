@@ -10,22 +10,17 @@ import crypto from "crypto";
 
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard";
 
-export async function seedDatabase() {
-  if (process.env.NODE_ENV === "production") {
-    console.log("[seed] NODE_ENV=production detected; skipping database seed.");
-    return;
+export async function seedDatabase(options = {}) {
+  const currentEnv = options.env !== undefined ? options.env : process.env.NODE_ENV;
+  if (typeof currentEnv === "string" && currentEnv.trim().toLowerCase() === "production") {
+    throw new Error("[seed] Refusing to run demo database seeder in production environment.");
+  }
+  if (!options.skipConnect && mongoose.connection.readyState !== 1) {
+    console.log(`[seed] Connecting to MongoDB: ${MONGO_URI}`);
+    await mongoose.connect(MONGO_URI);
   }
 
-  console.log(`[seed] Connecting to MongoDB: ${MONGO_URI}`);
-  await mongoose.connect(MONGO_URI);
-
-  const existingUserCount = await User.countDocuments();
-  if (existingUserCount > 0) {
-    console.log(`[seed] Existing database has ${existingUserCount} users; preserving all existing accounts.`);
-    return;
-  }
-
-  console.log("[seed] Initializing demo users for local development environment...");
+  // 1. Seed default users
 
   // 1. Seed default users
   const defaultUsers = [
@@ -58,17 +53,23 @@ export async function seedDatabase() {
   const userMap = {};
 
   for (const u of defaultUsers) {
-    const passwordHash = await bcrypt.hash(u.password, 10);
-    const created = await User.create({
-      name: u.name,
-      email: u.email,
-      passwordHash,
-      role: u.role,
-      active: true,
-      mfaEnabled: false,
-    });
-    console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
-    userMap[u.role] = created;
+    let existing = await User.findOne({ email: u.email });
+    if (!existing) {
+      const passwordHash = await bcrypt.hash(u.password, 10);
+      existing = await User.create({
+        name: u.name,
+        email: u.email,
+        passwordHash,
+        role: u.role,
+        active: true,
+        mfaEnabled: false,
+      });
+      console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
+    } else {
+      // Never overwrite an existing user's passwordHash, role, or MFA state during seed upsert
+      console.log(`[seed] Preserved existing user without overwriting password or role: ${u.email} (${existing.role})`);
+    }
+    userMap[u.role] = existing;
   }
 
   // 2. Check if sample reports exist
@@ -242,14 +243,16 @@ export async function seedDatabase() {
     console.log(`[seed] Existing database has ${reportCount} reports; skipping sample reports.`);
   }
 
-  console.log("\n=======================================================");
-  console.log("   PharmaGuard Demo User Accounts Ready (Dev Seed):");
-  console.log("   ----------------------------------------------------");
-  console.log("   Admin:       admin@pharmaguard.org");
-  console.log("   Pharmacist:  pharmacist@pharmaguard.org");
-  console.log("   Doctor:      doctor@pharmaguard.org");
-  console.log("   Researcher:  researcher@pharmaguard.org");
-  console.log("=======================================================\n");
+  if (process.env.NODE_ENV === "development") {
+    console.log("\n=======================================================");
+    console.log("   PharmaGuard Demo User Credentials Ready:");
+    console.log("   ----------------------------------------------------");
+    console.log("   Admin:       admin@pharmaguard.org       / Admin@12345");
+    console.log("   Pharmacist:  pharmacist@pharmaguard.org  / Pharma@12345");
+    console.log("   Doctor:      doctor@pharmaguard.org      / Doctor@12345");
+    console.log("   Researcher:  researcher@pharmaguard.org  / Research@12345");
+    console.log("=======================================================\n");
+  }
 }
 
 if (process.argv[1] && process.argv[1].endsWith("seed.js")) {
