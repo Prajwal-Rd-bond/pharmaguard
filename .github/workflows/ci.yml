@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
       - name: Install dependencies
@@ -34,9 +34,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ml-service/requirements.txt
+      - name: Install dependencies
+        working-directory: ml-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
       - name: Run ML test suite
         working-directory: ml-service
-        run: python3 -m unittest discover tests
+        env:
+          NODE_ENV: test
+          ALLOW_BUILTIN_REFERENCE_CORPUS: "true"
+        run: python -m pytest -p no:cacheprovider
 
   client-build:
     name: React Client Build Check
@@ -55,4 +65,3 @@ jobs:
       - name: Build client
         working-directory: client
         run: npm run build
-
