@@ -10,9 +10,15 @@ import crypto from "crypto";
 
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard";
 
-export async function seedDatabase() {
-  console.log(`[seed] Connecting to MongoDB: ${MONGO_URI}`);
-  await mongoose.connect(MONGO_URI);
+export async function seedDatabase(options = {}) {
+  const currentEnv = options.env !== undefined ? options.env : process.env.NODE_ENV;
+  if (typeof currentEnv === "string" && currentEnv.trim().toLowerCase() === "production") {
+    throw new Error("[seed] Refusing to run demo database seeder in production environment.");
+  }
+  if (!options.skipConnect && mongoose.connection.readyState !== 1) {
+    console.log(`[seed] Connecting to MongoDB: ${MONGO_URI}`);
+    await mongoose.connect(MONGO_URI);
+  }
 
   // 1. Seed or update default users
   const defaultUsers = [
@@ -46,8 +52,8 @@ export async function seedDatabase() {
 
   for (const u of defaultUsers) {
     let existing = await User.findOne({ email: u.email });
-    const passwordHash = await bcrypt.hash(u.password, 10);
     if (!existing) {
+      const passwordHash = await bcrypt.hash(u.password, 10);
       existing = await User.create({
         name: u.name,
         email: u.email,
@@ -58,12 +64,8 @@ export async function seedDatabase() {
       });
       console.log(`[seed] Created user: ${u.email} (${u.role})`);
     } else {
-      existing.passwordHash = passwordHash;
-      existing.active = true;
-      existing.mfaEnabled = false;
-      existing.role = u.role;
-      await existing.save();
-      console.log(`[seed] Updated user credentials: ${u.email} (${u.role})`);
+      // Never overwrite an existing user's passwordHash, role, or MFA state during seed upsert
+      console.log(`[seed] Preserved existing user without overwriting password or role: ${u.email} (${existing.role})`);
     }
     userMap[u.role] = existing;
   }

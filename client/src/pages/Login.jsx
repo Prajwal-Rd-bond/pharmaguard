@@ -130,6 +130,7 @@ export default function Login() {
               {busy ? "Signing in…" : "Log in"}
             </button>
 
+            {import.meta.env.DEV && (
             <div className="mt-6 border-t border-ink-200/80 pt-5">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
                 Quick Demo Access (1-Click Fill)
@@ -181,6 +182,7 @@ export default function Login() {
                 </button>
               </div>
             </div>
+            )}
           </form>
         </div>
       </div>

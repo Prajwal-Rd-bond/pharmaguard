@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { register, login, me, setupMFA, verifyMFA, disableMFA } from "../controllers/authController.js";
+import { register, login, verifyLogin, me, setupMFA, verifyMFA, disableMFA } from "../controllers/authController.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/mfa/verify-login", verifyLogin);
 router.get("/me", requireAuth, me);
 
 // Phase 2E: Two-Factor Authentication (TOTP)

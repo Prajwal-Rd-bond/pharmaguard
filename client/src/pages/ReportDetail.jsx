@@ -177,6 +177,12 @@ export default function ReportDetail() {
   };
 
   const clockDays = report.regulatoryClockDays || 15;
+  const expeditedClockLabel =
+    report.expeditedClockLabel ||
+    report.expedited_clock_label ||
+    classification?.expeditedClockLabel ||
+    classification?.expedited_clock_label ||
+    "none";
   const dueDate = report.regulatoryDueDate ? new Date(report.regulatoryDueDate) : null;
   const hoursLeft = dueDate ? Math.round((dueDate - new Date()) / 3600000) : null;
 
@@ -291,6 +297,9 @@ export default function ReportDetail() {
             <div className="rounded bg-ink-50 p-3">
               <span className="text-ink-400 block font-medium">Expedited SLA</span>
               <span className="font-extrabold text-ink-900 text-sm">{clockDays}-Day Clock</span>
+              <span className="text-[11px] text-ink-500 block mt-0.5 font-mono">
+                {expeditedClockLabel}
+              </span>
             </div>
             <div className="rounded bg-ink-50 p-3">
               <span className="text-ink-400 block font-medium">SLA Deadline</span>
@@ -702,6 +711,14 @@ export default function ReportDetail() {
                 <li key={r._id} className="rounded-xl border border-ink-100 bg-ink-50/60 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="badge bg-brand-50 text-brand-700 ring-brand-200">{r.sourceCollection}</span>
+                    {(r.corpusOrigin || r.corpus_origin) && (
+                      <span className="badge bg-amber-50 text-amber-700 ring-amber-200 text-[10px]">
+                        {r.corpusOrigin || r.corpus_origin}
+                      </span>
+                    )}
+                    {r.corpusOrigin === "builtin_demo_corpus" && (
+                      <span className="badge bg-amber-50 text-amber-700 ring-amber-200 text-[10px]">Demo Citation</span>
+                    )}
                     <strong className="text-sm text-ink-900">{r.title}</strong>
                     <span className="text-xs text-ink-400">similarity {r.similarityScore}</span>
                   </div>

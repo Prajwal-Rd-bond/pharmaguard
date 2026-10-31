@@ -47,13 +47,7 @@ const reportSchema = new mongoose.Schema(
       similarityScore: { type: Number },
       matchReason: { type: String },
     },
-    causality: {
-      naranjoScore: { type: Number },
-      naranjoCategory: { type: String }, // Definite, Probable, Possible, Doubtful
-      whoUmcCategory: { type: String },  // Certain, Probable, Possible, Unlikely, Conditional, Unassessable
-      pharmacistConfirmed: { type: Boolean, default: false },
-      pharmacistCausality: { type: String },
-    },
+
     ichSeriousness: [
       {
         type: String,
@@ -71,26 +65,50 @@ const reportSchema = new mongoose.Schema(
     ],
     isSerious: { type: Boolean, default: false },
     regulatoryClockDays: { type: Number, default: 15 },
+    periodicClockDays: { type: Number },
+    periodic_clock_days: { type: Number },
+    expeditedClockLabel: { type: String },
+    expedited_clock_label: { type: String },
     regulatoryDueDate: { type: Date },
 
-    // Causality Assessment (Naranjo & WHO-UMC)
+    // Causality Assessment (Naranjo & WHO-UMC) — exposes both camelCase (UI/server) and snake_case (ML contract)
     causality: {
       naranjoScore: { type: Number },
       naranjoCategory: { type: String }, // Definite, Probable, Possible, Doubtful
       whoUmcCategory: { type: String }, // Certain, Probable, Possible, Unlikely, Conditional, Unassessable
+      naranjoBreakdown: { type: mongoose.Schema.Types.Mixed },
+      unevidencedItems: [{ type: String }],
+      naranjo_score: { type: Number },
+      naranjo_category: { type: String },
+      who_umc_category: { type: String },
+      naranjo_breakdown: { type: mongoose.Schema.Types.Mixed },
+      unevidenced_items: [{ type: String }],
       rationale: { type: String },
       confirmedByPharmacist: { type: Boolean, default: false },
+      pharmacistConfirmed: { type: Boolean, default: false },
+      pharmacistCausality: { type: String },
       pharmacistNotes: { type: String },
     },
 
-    // Standardized Regulatory Terminology
+    // Standardized Regulatory Terminology — exposes both camelCase and snake_case
     terminology: {
       drugRxNorm: { type: mongoose.Schema.Types.Mixed },
       meddraAdverseEvents: [{ type: mongoose.Schema.Types.Mixed }],
+      drug_rxnorm: { type: mongoose.Schema.Types.Mixed },
+      meddra_adverse_events: [{ type: mongoose.Schema.Types.Mixed }],
     },
 
-    // Citation Verification / Anti-Hallucination
+    // Citation Verification / Anti-Hallucination & Pipeline Status Metadata
     citationVerification: { type: mongoose.Schema.Types.Mixed },
+    citation_verification: { type: mongoose.Schema.Types.Mixed },
+    evidenceStatus: { type: String },
+    evidence_status: { type: String },
+    assessmentStatus: { type: String },
+    assessment_status: { type: String },
+    assessment: { type: mongoose.Schema.Types.Mixed },
+    normalizedDrug: { type: mongoose.Schema.Types.Mixed },
+    normalized_drug: { type: mongoose.Schema.Types.Mixed },
+    regulatory_clock_days: { type: Number },
 
     // FHIR Interoperability Metadata
     fhirMetadata: {

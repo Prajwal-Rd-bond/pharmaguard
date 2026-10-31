@@ -8,7 +8,8 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "seed": "node src/seed.js",
-    "test": "node --test",
+    "seed:admin": "node scripts/seedAdmin.js",
+    "test": "node scripts/runTests.js",
     "lint": "echo \"Lint check passed\" && exit 0"
   },
   "dependencies": {

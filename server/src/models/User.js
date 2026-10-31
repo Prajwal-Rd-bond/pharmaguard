@@ -11,7 +11,14 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ROLES, required: true },
     active: { type: Boolean, default: true },
     mfaEnabled: { type: Boolean, default: false },
+    // TOTP secret, stored encrypted ("enc:v1:..." via utils/cryptoField.js). Legacy plaintext
+    // values are re-encrypted on next successful use or by scripts/migrateMfaSecrets.js.
     mfaSecret: { type: String },
+    // Replay protection: highest RFC 6238 time-step counter already accepted for this user.
+    mfaLastUsedStep: { type: Number, default: null },
+    // Per-account lockout after repeated MFA failures.
+    mfaFailedAttempts: { type: Number, default: 0 },
+    mfaLockedUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

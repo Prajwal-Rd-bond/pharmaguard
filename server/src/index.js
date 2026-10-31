@@ -1,67 +1,71 @@
 import "dotenv/config";
-import "express-async-errors";
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import app from "./app.js";
 import { connectDB } from "./config/db.js";
-import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutes.js";
-import reportRoutes from "./routes/reportRoutes.js";
-import auditRoutes from "./routes/auditRoutes.js";
-import signalRoutes from "./routes/signalRoutes.js";
-import fhirRoutes from "./routes/fhirRoutes.js";
-import { errorHandler } from "./middleware/errorHandler.js";
-import { rateLimiter } from "./middleware/rateLimiter.js";
-import { tracingMiddleware } from "./middleware/tracing.js";
-import { getDetailedHealth, getOperationalMetrics } from "./controllers/healthController.js";
-import { getSmartConfig } from "./controllers/fhirController.js";
-
-const app = express();
-
-app.use(tracingMiddleware);
-app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
-app.use(morgan("dev"));
-app.use(express.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true, limit: "5mb" }));
-
-// HL7 SMART on FHIR Discovery (RFC 5785 / SMART App Launch Framework)
-app.get("/.well-known/smart-configuration", getSmartConfig);
-
-// General API rate limit: 200 requests per 15 minutes
-app.use("/api", rateLimiter({ windowMs: 15 * 60 * 1000, max: 200 }));
-
-// Auth rate limit: 20 attempts per 15 minutes to mitigate brute-force
-const authLimiter = rateLimiter({ windowMs: 15 * 60 * 1000, max: 20, message: "Too many authentication attempts, please try again later." });
-
-app.get("/api/health", getDetailedHealth);
-app.get("/api/metrics", getOperationalMetrics);
-
-app.use("/api/auth", authLimiter, authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/reports", reportRoutes);
-app.use("/api/signals", signalRoutes);
-app.use("/api/fhir", fhirRoutes);
-app.use("/api/audit-logs", auditRoutes);
-
-app.use(errorHandler);
+import { assertProductionSecrets, isDevOrTest } from "./config/secrets.js";
 
 const PORT = process.env.PORT || 5000;
 
-async function start() {
-  await connectDB(process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard");
-  try {
-    const { seedDatabase } = await import("./seed.js");
-    await seedDatabase();
-  } catch (err) {
-    console.warn("[server] Auto-seed status:", err.message);
-  }
-  app.listen(PORT, () => console.log(`[server] PharmaGuard API listening on :${PORT}`));
+export const APPROVED_SEED_ENVIRONMENTS = ["development", "test"];
+
+export function shouldAutoSeed(env, autoSeed) {
+  const currentEnv = arguments.length > 0 ? env : process.env.NODE_ENV;
+  const currentAutoSeed = arguments.length > 1 ? autoSeed : process.env.AUTO_SEED;
+
+  if (!currentEnv || typeof currentEnv !== "string") return false;
+  return APPROVED_SEED_ENVIRONMENTS.includes(currentEnv.trim().toLowerCase()) && currentAutoSeed === "true";
 }
 
-start().catch((err) => {
-  console.error("[server] failed to start:", err);
-  process.exit(1);
-});
+export function isDirectExecution(argv1 = process.argv[1], importMetaUrl = import.meta.url) {
+  if (!argv1 || typeof argv1 !== "string") return false;
+  try {
+    const scriptPath = path.resolve(fileURLToPath(importMetaUrl));
+    const executedPath = path.resolve(argv1);
+    return scriptPath.toLowerCase() === executedPath.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+export async function start(options = {}) {
+  const connect = options.connectDB || connectDB;
+  const seeder = options.seedDatabase;
+  const serverApp = options.app || app;
+  const port = options.port || PORT;
+  const env = "env" in options ? options.env : process.env.NODE_ENV;
+  const autoSeed = "autoSeed" in options ? options.autoSeed : process.env.AUTO_SEED;
+  const mongoUri = options.mongoUri || process.env.MONGO_URI || "mongodb://localhost:27017/pharmaguard";
+
+  if (!isDevOrTest(env) && (options.enforceSecrets === true || !options.connectDB)) {
+    assertProductionSecrets({ ...process.env, NODE_ENV: env, ...(options.secrets || {}) });
+  }
+
+  await connect(mongoUri);
+
+  // Production safety gate: Seeding requires an explicitly approved non-production environment AND AUTO_SEED=true
+  if (shouldAutoSeed(env, autoSeed)) {
+    try {
+      if (seeder) {
+        await seeder();
+      } else {
+        const { seedDatabase } = await import("./seed.js");
+        await seedDatabase();
+      }
+    } catch (err) {
+      console.warn("[server] Auto-seed status:", err.message);
+    }
+  }
+
+  if (typeof serverApp.listen === "function") {
+    return serverApp.listen(port, () => console.log(`[server] PharmaGuard API listening on :${port}`));
+  }
+}
+
+// Only execute bootstrap when run directly via Node CLI
+if (isDirectExecution()) {
+  start().catch((err) => {
+    console.error("[server] failed to start:", err);
+    process.exit(1);
+  });
+}

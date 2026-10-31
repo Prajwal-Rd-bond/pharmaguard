@@ -10,8 +10,18 @@ Provides:
    - Persistent/Significant Disability or Incapacity
    - Congenital Anomaly / Birth Defect
    - Medically Significant Event
-3. Expedited regulatory reporting clock assignment (7-day, 15-day, 90-day SLA)
+3. Expedited regulatory reporting clock assignment (21 CFR 314.80 / ICH E2D / EMA GVP Module VI):
+   - Under 21 CFR 314.80(c)(1), the 7-day (fatal/life-threatening) or 15-day (other serious)
+     expedited IND/postmarketing Alert Report clock applies ONLY when the event is:
+       (a) serious, AND
+       (b) unexpected (unlisted in current labeling), AND
+       (c) there is a reasonable possibility of causal relationship (manufacturer/IND scope).
+   - Furthermore, Day 0 of the regulatory clock is the real date of initial receipt of minimum
+     reportable criteria by the manufacturer/sponsor (`receipt_date`), not the pipeline run time.
 """
+
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import numpy as np
@@ -67,9 +77,118 @@ if HAS_ML_DEPS and Pipeline:
         clf_pipeline = None
 
 
+def evaluate_expedited_regulatory_clock(
+    is_serious: bool,
+    criteria: List[str],
+    unexpected: Optional[bool] = None,
+    reasonably_related: Optional[bool] = None,
+    receipt_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluates FDA 21 CFR 314.80 / ICH E2A / E2D expedited reporting applicability.
+
+    Regulatory Rule:
+    - A 7-day (fatal / life-threatening) or 15-day (other serious) expedited reporting clock
+      applies ONLY when the case is:
+        1) serious (`is_serious=True`), AND
+        2) unexpected (`unexpected=True`), AND
+        3) reasonably related / suspected causal relationship (`reasonably_related=True`).
+    - When `is_serious=False`, or when `unexpected is False` or `reasonably_related is False`,
+      the expedited clock does NOT apply (`clock_type="none"`, `expedited_clock_days=None`).
+    - When `is_serious=True` but `unexpected` or `reasonably_related` has not yet been confirmed
+      (`None`), returns a `"potential"` label (`clock_type="potential"`, e.g. `"potential_7_day"`
+      or `"potential_15_day"`) pending label expectedness and causality confirmation.
+    - The regulatory deadline depends on the real initial receipt date (`receipt_date`, Day 0).
+      If `receipt_date` is not provided, `due_date` is `None` and `receipt_date_required=True`.
+    """
+    is_fatal_or_lt = "death" in (criteria or []) or "life_threatening" in (criteria or [])
+    candidate_days = 7 if is_fatal_or_lt else 15
+
+    parsed_receipt: Optional[datetime] = None
+    if isinstance(receipt_date, str) and receipt_date.strip():
+        try:
+            clean_iso = receipt_date.strip().replace("Z", "+00:00")
+            parsed_receipt = datetime.fromisoformat(clean_iso)
+        except ValueError:
+            parsed_receipt = None
+
+    if not is_serious:
+        return {
+            "applies": False,
+            "clock_type": "none",
+            "label": "none",
+            "expedited_clock_days": None,
+            "periodic_clock_days": 90,
+            "receipt_date": receipt_date,
+            "due_date": None,
+            "receipt_date_required": True,
+            "basis": "Non-serious case; expedited 7/15-day reporting does not apply.",
+        }
+
+    if unexpected is False or reasonably_related is False:
+        reasons = []
+        if unexpected is False:
+            reasons.append("reaction is expected/labeled")
+        if reasonably_related is False:
+            reasons.append("not reasonably related")
+        return {
+            "applies": False,
+            "clock_type": "none",
+            "label": "none",
+            "expedited_clock_days": None,
+            "periodic_clock_days": 90,
+            "receipt_date": receipt_date,
+            "due_date": None,
+            "receipt_date_required": True,
+            "basis": f"Serious case excluded from expedited reporting ({', '.join(reasons)}).",
+        }
+
+    if unexpected is True and reasonably_related is True:
+        due_iso = (
+            (parsed_receipt + timedelta(days=candidate_days)).isoformat()
+            if parsed_receipt is not None
+            else None
+        )
+        return {
+            "applies": True,
+            "clock_type": "expedited",
+            "label": f"expedited_{candidate_days}_day",
+            "expedited_clock_days": candidate_days,
+            "periodic_clock_days": None,
+            "receipt_date": receipt_date,
+            "due_date": due_iso,
+            "receipt_date_required": True,
+            "basis": (
+                f"Serious, unexpected, and reasonably related (manufacturer scope); "
+                f"{candidate_days}-day expedited clock anchored to real receipt date."
+            ),
+        }
+
+    # Serious, but expectedness or reasonable relatedness is unconfirmed at intake
+    return {
+        "applies": False,
+        "clock_type": "potential",
+        "label": f"potential_{candidate_days}_day",
+        "expedited_clock_days": None,
+        "potential_clock_days": candidate_days,
+        "periodic_clock_days": 90,
+        "receipt_date": receipt_date,
+        "due_date": None,
+        "receipt_date_required": True,
+        "basis": (
+            f"Serious case; potential {candidate_days}-day expedited clock applies only if "
+            f"confirmed unexpected and reasonably related, anchored to real receipt date."
+        ),
+    }
+
+
 def evaluate_ich_e2a_criteria(symptoms: list, raw_text: str = "") -> tuple:
     """
-    Evaluates official ICH E2A Seriousness criteria and regulatory clock.
+    Evaluates official ICH E2A Seriousness criteria and baseline triage SLA days.
+    Note: The 7/15-day expedited regulatory reporting clock applies only when a case is
+    serious AND unexpected AND reasonably related (manufacturer scope), anchored to the
+    real receipt date. Use `evaluate_expedited_regulatory_clock()` when expectedness,
+    relatedness, and receipt_date are evaluated.
     Returns: (criteria_list, is_serious, regulatory_clock_days)
     """
     text_corpus = (" ".join(symptoms) + " " + (raw_text or "")).lower()
@@ -113,7 +232,12 @@ def evaluate_ich_e2a_criteria(symptoms: list, raw_text: str = "") -> tuple:
     return criteria, is_serious, regulatory_clock_days
 
 
-def classify(extraction: dict) -> dict:
+def classify(
+    extraction: dict,
+    unexpected: Optional[bool] = None,
+    reasonably_related: Optional[bool] = None,
+    receipt_date: Optional[str] = None,
+) -> dict:
     symptoms = extraction.get("symptoms") or []
     symptoms_text = " ".join(symptoms)
     
@@ -158,6 +282,21 @@ def classify(extraction: dict) -> dict:
             ich_criteria.append("medically_significant")
             clock_days = 15
 
+    expedited_eval = evaluate_expedited_regulatory_clock(
+        is_serious=is_serious,
+        criteria=ich_criteria,
+        unexpected=unexpected,
+        reasonably_related=reasonably_related,
+        receipt_date=receipt_date,
+    )
+
+    if is_serious and unexpected is True and reasonably_related is True:
+        expedited_label = expedited_eval["label"]
+        periodic_days = None
+    else:
+        expedited_label = "none"
+        periodic_days = 90
+
     return {
         "severity": severity,
         "confidence": confidence,
@@ -166,4 +305,6 @@ def classify(extraction: dict) -> dict:
         "ich_e2a_criteria": ich_criteria,
         "is_serious": is_serious,
         "regulatory_clock_days": clock_days,
+        "expedited_clock_label": expedited_label,
+        "periodic_clock_days": periodic_days,
     }

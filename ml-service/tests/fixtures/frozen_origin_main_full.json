@@ -1,0 +1,181 @@
+{
+  "pipeline_run_id": "run-123",
+  "deidentified_text": "[REDACTED_NAME], [REDACTED_HOSPITAL_ID]. Took amoxicillin and got rash.",
+  "deidentification_log": [
+    {
+      "type": "hospital_id",
+      "span": "12345"
+    },
+    {
+      "type": "name",
+      "span": "Jane Doe"
+    },
+    {
+      "type": "deid_model_error",
+      "span": "No module named 'transformers'"
+    }
+  ],
+  "extraction": {
+    "drugName": "amoxicillin",
+    "genericName": "amoxicillin",
+    "brandName": null,
+    "dosage": null,
+    "frequency": null,
+    "route": null,
+    "duration": null,
+    "symptoms": [
+      "rash"
+    ],
+    "onsetTimeline": null,
+    "age": null,
+    "gender": null,
+    "comorbidities": [],
+    "concomitantDrugs": [],
+    "terminology": {
+      "drug_rxnorm": {
+        "rxcui": "723",
+        "atc_code": "J01CA04",
+        "display_name": "Amoxicillin",
+        "class": "Beta-Lactam Penicillin"
+      },
+      "meddra_adverse_events": [
+        {
+          "raw_term": "rash",
+          "pt": "Rash",
+          "llt": "Erythematous rash",
+          "soc": "Skin and subcutaneous tissue disorders",
+          "code": "10037844"
+        }
+      ]
+    },
+    "incomplete": false,
+    "modelVersion": "extraction-stub-0.2",
+    "promptVersion": "v2"
+  },
+  "classification": {
+    "severity": "moderate",
+    "confidence": 0.7,
+    "model_name": "rule_based_baseline",
+    "model_version": "0.2.0",
+    "ich_e2a_criteria": [],
+    "is_serious": false,
+    "regulatory_clock_days": 90
+  },
+  "retrievals": [
+    {
+      "source_collection": "drug_labels",
+      "source_id": "label-amoxicillin-001",
+      "title": "Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions)",
+      "snippet": "Serious and occasionally fatal hypersensitivity (anaphylactic) reactions have been reported in patients on penicillin therapy. Erythematous maculopapular rashes, erythema multiforme, and Stevens-Johnson syndrome may occur. Discontinue immediately if allergic reaction arises.",
+      "similarity_score": 0.99
+    },
+    {
+      "source_collection": "historical_cases",
+      "source_id": "case-historical-0142",
+      "title": "Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity",
+      "snippet": "A 34-year-old female developed generalized urticaria and facial flushing 90 minutes post second dose of amoxicillin. Rapidly resolved following oral cetirizine and discontinuation of the beta-lactam.",
+      "similarity_score": 0.99
+    },
+    {
+      "source_collection": "openfda_labels",
+      "source_id": "fda-amoxicillin",
+      "title": "Amoxicillin \u2014 FDA Prescribing Information",
+      "snippet": "6 ADVERSE REACTIONS The following clinically significant adverse reactions are described elsewhere in labeling: Anaphylactic reactions [see Warnings and Precautions (5.1) ] Severe Cutaneous Adverse Reactions (SCAR) [see Warnings and Precautions (5.2) ] Drug-Induced Enterocolitis Syndrome (DIES) [see Warnings and Precau",
+      "similarity_score": 0.99
+    }
+  ],
+  "summary": "Report involves amoxicillin, with reported symptoms: rash.\nML risk classification: moderate (confidence: 70%, model: rule_based_baseline v0.2.0).\nSupporting evidence:\n  - [drug_labels] Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions) (similarity 0.99): Serious and occasionally fatal hypersensitivity (anaphylactic) reactions have been reported in patients on penicillin therapy. Erythematous maculopapular rashes, erythema multiforme, and Stevens-Johnson syndrome may occur. Discontinue immediately if allergic reaction arises.\n  - [historical_cases] Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity (similarity 0.99): A 34-year-old female developed generalized urticaria and facial flushing 90 minutes post second dose of amoxicillin. Rapidly resolved following oral cetirizine and discontinuation of the beta-lactam.\n  - [openfda_labels] Amoxicillin \u2014 FDA Prescribing Information (similarity 0.99): 6 ADVERSE REACTIONS The following clinically significant adverse reactions are described elsewhere in labeling: Anaphylactic reactions [see Warnings and Precautions (5.1) ] Severe Cutaneous Adverse Reactions (SCAR) [see Warnings and Precautions (5.2) ] Drug-Induced Enterocolitis Syndrome (DIES) [see Warnings and Precau",
+  "citation_verification": {
+    "overall_grounding_score": 0.74,
+    "hallucination_detected": false,
+    "total_claims": 8,
+    "verified_claims_count": 6,
+    "partial_claims_count": 1,
+    "unsupported_claims_count": 1,
+    "claims": [
+      {
+        "claim": "Report involves amoxicillin, with reported symptoms: rash.",
+        "status": "PARTIAL",
+        "grounding_score": 0.28,
+        "matched_source_id": "label-amoxicillin-001",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions)",
+        "citation_index": 1
+      },
+      {
+        "claim": "ML risk classification: moderate (confidence: 70%, model: rule_based_baseline v0.2.0).",
+        "status": "UNSUPPORTED",
+        "grounding_score": 0.09,
+        "matched_source_id": "fda-amoxicillin",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information",
+        "citation_index": 3
+      },
+      {
+        "claim": "Supporting evidence:\n  - [drug_labels] Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions) (similarity 0.99): Serious and occasionally fatal hypersensitivity (anaphylactic) reactions have been reported in patients on penicillin therapy.",
+        "status": "VERIFIED",
+        "grounding_score": 0.77,
+        "matched_source_id": "label-amoxicillin-001",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions)",
+        "citation_index": 1
+      },
+      {
+        "claim": "Erythematous maculopapular rashes, erythema multiforme, and Stevens-Johnson syndrome may occur.",
+        "status": "VERIFIED",
+        "grounding_score": 1.0,
+        "matched_source_id": "label-amoxicillin-001",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions)",
+        "citation_index": 1
+      },
+      {
+        "claim": "Discontinue immediately if allergic reaction arises.",
+        "status": "VERIFIED",
+        "grounding_score": 1.0,
+        "matched_source_id": "label-amoxicillin-001",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions)",
+        "citation_index": 1
+      },
+      {
+        "claim": "- [historical_cases] Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity (similarity 0.99): A 34-year-old female developed generalized urticaria and facial flushing 90 minutes post second dose of amoxicillin.",
+        "status": "VERIFIED",
+        "grounding_score": 0.88,
+        "matched_source_id": "case-historical-0142",
+        "matched_source_title": "Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity",
+        "citation_index": 2
+      },
+      {
+        "claim": "Rapidly resolved following oral cetirizine and discontinuation of the beta-lactam.",
+        "status": "VERIFIED",
+        "grounding_score": 0.98,
+        "matched_source_id": "case-historical-0142",
+        "matched_source_title": "Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity",
+        "citation_index": 2
+      },
+      {
+        "claim": "- [openfda_labels] Amoxicillin \u2014 FDA Prescribing Information (similarity 0.99): 6 ADVERSE REACTIONS The following clinically significant adverse reactions are described elsewhere in labeling: Anaphylactic reactions [see Warnings and Precautions (5.1) ] Severe Cutaneous Adverse Reactions (SCAR) [see Warnings and Precautions (5.2) ] Drug-Induced Enterocolitis Syndrome (DIES) [see Warnings and Precau",
+        "status": "VERIFIED",
+        "grounding_score": 0.92,
+        "matched_source_id": "fda-amoxicillin",
+        "matched_source_title": "Amoxicillin \u2014 FDA Prescribing Information",
+        "citation_index": 3
+      }
+    ],
+    "grounded_summary": "Report involves amoxicillin, with reported symptoms: rash [~1]. ML risk classification: moderate (confidence: 70%, model: rule_based_baseline v0.2.0) [?]. Supporting evidence:\n  - [drug_labels] Amoxicillin \u2014 FDA Prescribing Information (Adverse Reactions) (similarity 0.99): Serious and occasionally fatal hypersensitivity (anaphylactic) reactions have been reported in patients on penicillin therapy [1]. Erythematous maculopapular rashes, erythema multiforme, and Stevens-Johnson syndrome may occur [1]. Discontinue immediately if allergic reaction arises [1]. - [historical_cases] Historical ADR Case Archive #0142 \u2014 Drug Hypersensitivity (similarity 0.99): A 34-year-old female developed generalized urticaria and facial flushing 90 minutes post second dose of amoxicillin [2]. Rapidly resolved following oral cetirizine and discontinuation of the beta-lactam [2]. - [openfda_labels] Amoxicillin \u2014 FDA Prescribing Information (similarity 0.99): 6 ADVERSE REACTIONS The following clinically significant adverse reactions are described elsewhere in labeling: Anaphylactic reactions [see Warnings and Precautions (5.1) ] Severe Cutaneous Adverse Reactions (SCAR) [see Warnings and Precautions (5.2) ] Drug-Induced Enterocolitis Syndrome (DIES) [see Warnings and Precau [3]."
+  },
+  "causality": {
+    "naranjo_score": 3,
+    "naranjo_category": "Possible",
+    "naranjo_breakdown": {
+      "q1_previous_conclusive_reports": 1,
+      "q2_temporal_relationship": 0,
+      "q3_dechallenge_positive": 0,
+      "q4_rechallenge_positive": 0,
+      "q5_alternative_causes_absent": 2,
+      "q6_placebo_reaction": 0,
+      "q7_toxic_drug_concentration": 0,
+      "q8_dose_response": 0,
+      "q9_previous_sensitization": 0,
+      "q10_objective_evidence": 0
+    },
+    "who_umc_category": "Possible",
+    "rationale": "Naranjo total score of 3 indicates a Possible causality relationship. WHO-UMC assessment classifies case as Possible based on temporal sequence (unclear), dechallenge (unknown/untested), and alternative etiologies (none prominent)."
+  }
+}

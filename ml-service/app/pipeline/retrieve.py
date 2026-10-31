@@ -11,7 +11,174 @@ Combines:
 import os
 import math
 import re
-from typing import List, Dict, Any, Optional
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+class TrustedEvidenceRecord(dict):
+    """
+    Internal provenance marker (dict subclass) designating evidence records retrieved
+    from internal retrieval / regulatory label sources.
+    JSON deserialization of client HTTP requests or LLM response parsing produces
+    standard dict instances rather than TrustedEvidenceRecord.
+    Inherits from dict, enabling native JSON serialization without custom encoders.
+    """
+    pass
+
+
+_QUERY_ALLOWED_RE = re.compile(r"^[A-Za-z0-9 '\-]+$")
+
+
+class RetrievalList(list):
+    """Subclass of list preserving list semantics while exposing typed evidence_status and rejected_records."""
+    def __init__(
+        self,
+        items: List[Dict[str, Any]],
+        evidence_status: str = "ok",
+        rejected_records: Optional[List[Dict[str, str]]] = None,
+    ):
+        super().__init__(items)
+        self.evidence_status = evidence_status
+        self.rejected_records: List[Dict[str, str]] = list(rejected_records) if rejected_records else []
+
+
+def sanitize_and_mark_trusted_evidence(
+    records: List[Dict[str, Any]],
+    *,
+    base_status: str = "ok",
+    static_ids: Optional[set] = None,
+) -> RetrievalList:
+    """
+    Applies the trusted-evidence identifier check (phone, email, SSN, MRN, date, address)
+    without the title-name heuristic (NAME_TITLE_RE).
+    Contaminated-record policy:
+    - When a trusted record fails the identifier check, drop ONLY that record.
+    - Add {"source_id": ..., "reason": "pii_rejected"} to rejected_records.
+    - Set evidence_status to "partial_pii_rejected" when other records remain,
+      or "pii_rejected" when none remain.
+    - Never log or return the rejected text.
+    """
+    from ..privacy import _has_trusted_evidence_identifier_phi
+
+    if static_ids is None:
+        static_ids = {d["source_id"] for d in KNOWLEDGE_CORPUS}
+
+    clean_records: List[Dict[str, Any]] = []
+    rejected_records: List[Dict[str, str]] = []
+
+    for doc in records:
+        if not isinstance(doc, dict):
+            continue
+        sid = str(doc.get("source_id") or doc.get("evidence_id") or "unknown")
+        title_text = str(doc.get("title") or "")
+        snippet_text = str(doc.get("snippet") or "")
+        if _has_trusted_evidence_identifier_phi(title_text) or _has_trusted_evidence_identifier_phi(snippet_text):
+            rejected_records.append({"source_id": sid, "reason": "pii_rejected"})
+            logger.warning("Trusted evidence record rejected due to identifier check (source_id=%s).", sid)
+            continue
+        clean_records.append(doc)
+
+    trusted_out: List[Dict[str, Any]] = []
+    for idx, doc in enumerate(clean_records, start=1):
+        doc_copy = dict(doc)
+        if not doc_copy.get("evidence_id"):
+            doc_copy["evidence_id"] = f"E{idx}"
+        origin = doc_copy.get("corpus_origin") or (
+            "builtin_demo_corpus" if doc_copy.get("source_id") in static_ids else "external_or_vector"
+        )
+        doc_copy["corpus_origin"] = origin
+        rec = TrustedEvidenceRecord(doc_copy)
+        rec.corpus_origin = origin
+        trusted_out.append(rec)
+
+    if rejected_records:
+        final_status = "partial_pii_rejected" if trusted_out else "pii_rejected"
+    else:
+        final_status = base_status
+
+    return RetrievalList(trusted_out, evidence_status=final_status, rejected_records=rejected_records)
+
+
+_DOSAGE_TOKEN_RE = re.compile(r"^\d+(?:\.\d+)?(?:-?(?:mg|mcg|ug|g|ml|iu|units?))?$", re.IGNORECASE)
+_CLINICAL_DESCRIPTOR_TOKENS = {
+    "oral", "tablet", "tablets", "capsule", "capsules", "sodium", "potassium",
+    "hydrochloride", "hcl", "sulfate", "acetate", "tartrate", "succinate",
+    "extended-release", "er", "xr", "sr", "iv", "injection", "solution",
+    "disease", "syndrome",
+}
+
+
+def validate_openfda_query_term(term: Any) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Validates drug query term for OpenFDA retrieval.
+    Note: Live OpenFDA lookup (`ENABLE_LIVE_OPENFDA=true`) is strictly for drug names only.
+    Policy:
+    - Allowed characters: letters, digits, spaces, hyphen, apostrophe.
+    - Maximum length: 64 characters after trimming.
+    - Reject empty or whitespace-only terms.
+    - Reject terms containing any other characters, including &, +, =, /, quotation marks, newlines, parentheses.
+    - Reject terms that trigger the residual-PII tripwire.
+    - Reject anything that looks like a person name (e.g., 'John Smith', 'Dr. Jane Doe', spaCy PERSON entities)
+      or raw clinical narrative sentences (> 4 words).
+    - Reject invalid terms; do not silently rewrite them.
+    Returns: (is_valid, clean_trimmed_term, error_status)
+    """
+    if not isinstance(term, str):
+        return False, None, "invalid_term"
+    trimmed = term.strip()
+    if not trimmed:
+        return False, None, "invalid_term"
+    if len(trimmed) > 64:
+        return False, None, "term_too_long"
+    if not _QUERY_ALLOWED_RE.match(trimmed):
+        return False, None, "invalid_characters"
+    disallowed = {'"', '&', '+', '=', '/', '\n', '\r', '(', ')'}
+    if any(ch in trimmed for ch in disallowed):
+        return False, None, 'invalid_characters'
+    try:
+        from ..privacy import _assert_no_residual_regex_phi
+        _assert_no_residual_regex_phi(trimmed)
+    except Exception:
+        return False, None, "pii_rejected"
+
+    words = trimmed.split()
+    if len(words) > 4:
+        return False, None, "invalid_term"
+
+    # Reject person names / non-drug multi-word phrases
+    from .deidentify import is_protected_clinical_term, get_spacy_model, _CLINICAL_PHRASE_AT_SPAN_RE
+    from .extract import KNOWN_DRUGS
+
+    lower_trimmed = trimmed.lower()
+    known_drug_set = set(KNOWN_DRUGS)
+    is_known_or_protected = (
+        lower_trimmed in known_drug_set
+        or is_protected_clinical_term(lower_trimmed)
+        or bool(_CLINICAL_PHRASE_AT_SPAN_RE.match(trimmed))
+        or all(
+            w.lower() in known_drug_set
+            or is_protected_clinical_term(w.lower())
+            or w.lower() in _CLINICAL_DESCRIPTOR_TOKENS
+            or bool(_DOSAGE_TOKEN_RE.match(w))
+            for w in words
+        )
+    )
+
+    if not is_known_or_protected:
+        # Multi-word phrase with capitalized words (e.g. 'John Smith', 'Alice Wonderland') or
+        # untitled two-word lowercase name ('john smith') that is not a drug term -> reject as pii_rejected
+        if len(words) >= 2:
+            return False, None, "pii_rejected"
+        # Single-word capitalized proper noun that is not a known/protected drug (e.g. 'John', 'Smith')
+        if len(words) == 1 and words[0][0].isupper() and not words[0].isupper():
+            nlp = get_spacy_model()
+            if nlp is not None:
+                doc = nlp(trimmed)
+                if any(ent.label_ == "PERSON" for ent in doc.ents):
+                    return False, None, "pii_rejected"
+
+    return True, trimmed, None
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -27,7 +194,9 @@ except ImportError:
     Distance = None
     PointStruct = None
 
-# Comprehensive knowledge base corpus spanning major FDA drug labels, guidelines, and literature
+# Built-in static demo/reference corpus (used for offline demo/regression when ALLOW_BUILTIN_REFERENCE_CORPUS=true;
+# NOT a live FDA regulatory label feed. Set ALLOW_BUILTIN_REFERENCE_CORPUS=false in strict regulatory production
+# to require verified Qdrant / live OpenFDA evidence only).
 KNOWLEDGE_CORPUS = [
     {
         "source_collection": "drug_labels",
@@ -162,6 +331,15 @@ def ensure_seeded():
             _is_seeded = True
             return
 
+        try:
+            from ..config import get_settings
+            allow_seed = getattr(get_settings(), "allow_builtin_reference_corpus", False)
+        except Exception:
+            allow_seed = os.environ.get("ALLOW_BUILTIN_REFERENCE_CORPUS", "").strip().lower() in ("1", "true", "yes", "on")
+
+        if not allow_seed:
+            return
+
         # Seed baseline knowledge base
         if embedding_model:
             points = []
@@ -200,42 +378,85 @@ except Exception as e:
 _LIVE_EVIDENCE_CACHE = {}
 
 
-def retrieve_live_evidence_for_drug(drug_name: str) -> List[Dict[str, Any]]:
+def retrieve_live_evidence_for_drug(drug_name: str, settings: Optional[Any] = None) -> RetrievalList:
     """
     Fetches live OpenFDA drug label warnings tied to the extracted drug with caching.
+    Governed by ENABLE_LIVE_OPENFDA (default: false).
     """
-    if not drug_name:
-        return []
+    if settings is None:
+        try:
+            from ..config import get_settings
+            settings = get_settings()
+        except Exception:
+            settings = None
 
-    clean_drug = drug_name.strip().lower()
-    if clean_drug in _LIVE_EVIDENCE_CACHE:
-        return _LIVE_EVIDENCE_CACHE[clean_drug]
+    if settings is None or not getattr(settings, "enable_live_openfda", False):
+        return RetrievalList([], evidence_status="live_disabled")
+
+    is_valid, clean_drug, err_status = validate_openfda_query_term(drug_name)
+    if not is_valid:
+        return RetrievalList([], evidence_status=err_status or "invalid_term")
+
+    cache_key = clean_drug.lower()
+    if cache_key in _LIVE_EVIDENCE_CACHE:
+        cached = _LIVE_EVIDENCE_CACHE[cache_key]
+        return RetrievalList(cached, evidence_status="ok" if cached else "none_found")
 
     evidence = []
+    status = "ok"
     try:
         import urllib.request
+        import urllib.parse
         import json
-        url = f"https://api.fda.gov/drug/label.json?search=openfda.generic_name:{clean_drug}+OR+openfda.brand_name:{clean_drug}&limit=1"
+        quoted = urllib.parse.quote(clean_drug)
+        base_url = getattr(settings, "openfda_base_url", "https://api.fda.gov")
+        url = f"{base_url}/drug/label.json?search=openfda.generic_name:{quoted}+OR+openfda.brand_name:{quoted}&limit=1"
         req = urllib.request.Request(url, headers={"User-Agent": "PharmaGuard-PV/1.0"})
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read().decode())
-            results = data.get("results", [])
-            if results:
-                res = results[0]
-                warnings = res.get("warnings") or res.get("adverse_reactions") or []
-                snippet = warnings[0][:320] if warnings else "FDA prescribing information on record."
-                evidence.append({
-                    "source_collection": "openfda_labels",
-                    "source_id": f"fda-{clean_drug}",
-                    "title": f"{drug_name.capitalize()} — FDA Prescribing Information",
-                    "snippet": snippet,
-                    "similarity_score": 0.88,
-                })
-    except Exception:
-        pass
+        timeout_s = min(float(getattr(settings, "http_timeout_s", 20.0)), 5.0)
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            try:
+                raw_bytes = resp.read()
+                data = json.loads(raw_bytes.decode())
+            except Exception as parse_exc:
+                logger.warning("Live OpenFDA response malformed (error_type=%s).", type(parse_exc).__name__)
+                status = "malformed_response"
+                data = None
+            if data is not None:
+                if not isinstance(data, dict) or "results" not in data:
+                    status = "malformed_response"
+                else:
+                    results = data.get("results", [])
+                    if results and isinstance(results, list):
+                        res = results[0]
+                        warnings = res.get("warnings") or res.get("adverse_reactions") or []
+                        snippet = warnings[0][:320] if warnings else "FDA prescribing information on record."
+                        evidence.append({
+                            "source_collection": "openfda_labels",
+                            "source_id": f"fda-{cache_key}",
+                            "title": f"{clean_drug.capitalize()} — FDA Prescribing Information",
+                            "snippet": snippet,
+                            "similarity_score": 0.88,
+                        })
+                        status = "ok"
+                    else:
+                        status = "none_found"
+    except Exception as exc:
+        if "NETWORK ISOLATION VIOLATION" in str(exc):
+            raise
+        err_str = str(exc).lower()
+        if isinstance(exc, (TimeoutError, urllib.error.URLError)) and ("timed out" in err_str or "timeout" in err_str):
+            logger.warning("Live OpenFDA retrieval timed out (error_type=%s).", type(exc).__name__)
+            status = "live_timeout"
+        else:
+            logger.warning("Live OpenFDA retrieval failed (error_type=%s).", type(exc).__name__)
+            status = "provider_error"
 
-    _LIVE_EVIDENCE_CACHE[clean_drug] = evidence
-    return evidence
+    if status in ("ok", "none_found"):
+        _LIVE_EVIDENCE_CACHE[cache_key] = evidence
+    return RetrievalList(evidence, evidence_status=status)
+
+
+_ORIGINAL_RETRIEVE_LIVE_EVIDENCE_FOR_DRUG = retrieve_live_evidence_for_drug
 
 
 # -------------------------------------------------------------
@@ -339,11 +560,19 @@ def rerank_candidates(candidates: List[Dict[str, Any]], drug_name: str, symptoms
     return reranked
 
 
-def retrieve(extraction: dict, top_k: int = 5) -> List[Dict[str, Any]]:
+def retrieve(extraction: dict, top_k: int = 5, settings: Optional[Any] = None) -> RetrievalList:
     """
     Retrieves supporting clinical literature, FDA labels, and guidelines using
     hybrid dense + sparse BM25 retrieval, RRF rank fusion, and clinical re-ranking.
+    Assigns evidence_id exactly once (E1..En) and marks records with trusted provenance.
     """
+    if settings is None:
+        try:
+            from ..config import get_settings
+            settings = get_settings()
+        except Exception:
+            settings = None
+
     ensure_seeded()
 
     drug_name = extraction.get("drugName") or ""
@@ -357,12 +586,24 @@ def retrieve(extraction: dict, top_k: int = 5) -> List[Dict[str, Any]]:
 
     query_text = " ".join(query_parts)
     if not query_text:
-        return []
+        return RetrievalList(
+            [],
+            evidence_status="live_disabled" if (settings is None or not getattr(settings, "enable_live_openfda", False)) else "none_found"
+        )
+
+    allow_builtin_corpus = (
+        getattr(settings, "allow_builtin_reference_corpus", False)
+        if settings is not None
+        else (
+            os.environ.get("ALLOW_BUILTIN_REFERENCE_CORPUS", "").strip().lower() in ("1", "true", "yes", "on")
+        )
+    )
+    active_static_corpus = KNOWLEDGE_CORPUS if allow_builtin_corpus else []
 
     # 1. Sparse BM25 retrieval over corpus
-    bm25_scores = compute_bm25_scores(query_text, KNOWLEDGE_CORPUS)
-    sparse_sorted_indices = sorted(range(len(KNOWLEDGE_CORPUS)), key=lambda i: bm25_scores[i], reverse=True)
-    sparse_ranked_ids = [KNOWLEDGE_CORPUS[i]["source_id"] for i in sparse_sorted_indices if bm25_scores[i] > 0]
+    bm25_scores = compute_bm25_scores(query_text, active_static_corpus) if active_static_corpus else []
+    sparse_sorted_indices = sorted(range(len(active_static_corpus)), key=lambda i: bm25_scores[i], reverse=True)
+    sparse_ranked_ids = [active_static_corpus[i]["source_id"] for i in sparse_sorted_indices if bm25_scores[i] > 0]
 
     # 2. Dense semantic retrieval via Qdrant or keyword vector proxy
     dense_ranked_ids = []
@@ -384,12 +625,12 @@ def retrieve(extraction: dict, top_k: int = 5) -> List[Dict[str, Any]]:
                     "similarity_score": round(hit.score, 2),
                 }
         except Exception as e:
-            print(f"Dense vector search failed: {e}. Falling back to sparse ranker.")
+            logger.warning("Dense vector search failed: %s. Falling back to sparse ranker.", type(e).__name__)
 
     # If dense search was unavailable, create dense proxy rank from keyword containment
-    if not dense_ranked_ids:
+    if not dense_ranked_ids and active_static_corpus:
         dense_ranked_ids = [
-            doc["source_id"] for doc in KNOWLEDGE_CORPUS
+            doc["source_id"] for doc in active_static_corpus
             if any(term.lower() in doc["snippet"].lower() or term.lower() in doc["title"].lower() for term in query_parts)
         ]
 
@@ -400,7 +641,7 @@ def retrieve(extraction: dict, top_k: int = 5) -> List[Dict[str, Any]]:
     candidates = []
     seen_ids = set()
 
-    for doc in KNOWLEDGE_CORPUS:
+    for doc in active_static_corpus:
         sid = doc["source_id"]
         if sid in rrf_scores and sid not in seen_ids:
             seen_ids.add(sid)
@@ -420,13 +661,38 @@ def retrieve(extraction: dict, top_k: int = 5) -> List[Dict[str, Any]]:
             seen_ids.add(sid)
             candidates.append(hit_doc)
 
-    # 4. Supplemental live OpenFDA evidence
-    live = retrieve_live_evidence_for_drug(drug_name)
-    for item in live:
-        if item["source_id"] not in seen_ids:
-            seen_ids.add(item["source_id"])
-            candidates.append(item)
+    # 4. Supplemental live OpenFDA evidence (governed by ENABLE_LIVE_OPENFDA)
+    live_status = "live_disabled"
+    if settings is not None and getattr(settings, "enable_live_openfda", False):
+        live_res = retrieve_live_evidence_for_drug(drug_name, settings=settings)
+        live_status = getattr(live_res, "evidence_status", "ok")
+        for item in live_res:
+            if item["source_id"] not in seen_ids:
+                seen_ids.add(item["source_id"])
+                candidates.append(item)
 
     # 5. Clinical Re-ranking
     final_ranked = rerank_candidates(candidates, drug_name, symptoms)
-    return final_ranked[:top_k]
+    top_candidates = final_ranked[:top_k]
+
+    # Status determination (before contaminated-record filtering):
+    if settings is None or not getattr(settings, "enable_live_openfda", False):
+        base_status = "live_disabled"
+    elif live_status in ("provider_error", "live_timeout", "malformed_response"):
+        base_status = live_status
+    elif live_status in ("invalid_term", "invalid_characters", "term_too_long", "pii_rejected", "partial_pii_rejected"):
+        base_status = live_status
+    elif live_status not in ("ok", "none_found", "live_disabled"):
+        # Unknown status values must never fall through to none_found
+        base_status = live_status
+    elif top_candidates:
+        base_status = "ok"
+    else:
+        base_status = "none_found"
+
+    static_ids = {d["source_id"] for d in KNOWLEDGE_CORPUS}
+    return sanitize_and_mark_trusted_evidence(
+        top_candidates,
+        base_status=base_status,
+        static_ids=static_ids,
+    )

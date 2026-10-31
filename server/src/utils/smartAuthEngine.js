@@ -1,9 +1,10 @@
 import crypto from "crypto";
+import { getJwtSecret } from "../config/secrets.js";
 
 /**
  * Standard RFC 7519 HMAC-SHA256 JWT generation using native Node crypto.
  */
-export function signSmartJwt(payload, secret = process.env.JWT_SECRET || "smart-fhir-dev-secret-pharma-2026") {
+export function signSmartJwt(payload, secret = getJwtSecret()) {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const body = Buffer.from(JSON.stringify({ ...payload, exp })).toString("base64url");
@@ -11,7 +12,7 @@ export function signSmartJwt(payload, secret = process.env.JWT_SECRET || "smart-
   return `${header}.${body}.${signature}`;
 }
 
-export function verifySmartJwt(token, secret = process.env.JWT_SECRET || "smart-fhir-dev-secret-pharma-2026") {
+export function verifySmartJwt(token, secret = getJwtSecret()) {
   if (!token || typeof token !== "string") throw new Error("Invalid token");
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("Invalid JWT token structure");
@@ -200,7 +201,7 @@ export function exchangeSmartToken({ code, clientId, redirectUri }) {
   // Once used, the authorization code is invalidated
   authCodes.delete(code);
 
-  const jwtSecret = process.env.JWT_SECRET || "smart-fhir-dev-secret-pharma-2026";
+  const jwtSecret = getJwtSecret();
   const tokenPayload = {
     sub: record.userId,
     role: "doctor",

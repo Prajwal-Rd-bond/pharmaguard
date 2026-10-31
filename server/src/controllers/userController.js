@@ -14,6 +14,10 @@ export async function createUser(req, res) {
   }
   if (!ROLES.includes(role)) return res.status(400).json({ error: `role must be one of ${ROLES.join(", ")}` });
 
+  if (typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ error: "password must be at least 8 characters long" });
+  }
+
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) return res.status(409).json({ error: "Email already registered" });
 

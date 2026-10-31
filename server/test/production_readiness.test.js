@@ -1,3 +1,4 @@
+process.env.NODE_ENV = process.env.NODE_ENV || "test";
 import test, { describe } from "node:test";
 import assert from "node:assert";
 import { encryptField, decryptField, isEncrypted } from "../src/utils/cryptoField.js";
